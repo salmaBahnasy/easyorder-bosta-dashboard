@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://127.0.0.1:5050";
+const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://127.0.0.1:5050";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -26,7 +26,7 @@ apiClient.interceptors.request.use(
   (error) => {
     console.log("[ordersApi] REQUEST ERROR", error);
     return Promise.reject(error);
-  }
+  },
 );
 
 apiClient.interceptors.response.use(
@@ -47,7 +47,7 @@ apiClient.interceptors.response.use(
       data: res?.data,
     });
     return Promise.reject(error);
-  }
+  },
 );
 
 export async function getOrders({
@@ -84,7 +84,7 @@ export async function createOrder(payload) {
 
 export async function getZones() {
   const response = await axios.get(
-    "https://api-fulfillment.bosta.co/api/v1/zones"
+    "https://api-fulfillment.bosta.co/api/v1/zones",
   );
   return response.data;
 }
@@ -138,7 +138,10 @@ export async function createEmployee({ name, email, password, role }) {
 }
 
 export async function updateEmployee(employeeId, payload) {
-  const response = await apiClient.patch(`/api/employees/${employeeId}`, payload);
+  const response = await apiClient.patch(
+    `/api/employees/${employeeId}`,
+    payload,
+  );
   return response.data;
 }
 
