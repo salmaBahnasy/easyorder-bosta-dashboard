@@ -1,94 +1,75 @@
-import { NavLink, Outlet } from "react-router-dom";
-
-const linkStyle = {
-  display: "block",
-  padding: "12px 16px",
-  color: "#e8eaed",
-  textDecoration: "none",
-  borderRadius: 8,
-  marginBottom: 4,
-};
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { logo } from "../assets/images";
+import { clearAuthStorage } from "../utils/auth";
+import "./MainLayout.css";
 
 export default function MainLayout() {
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    clearAuthStorage();
+    navigate("/login", { replace: true });
+  }
+
   return (
-    <div
-      style={{
-        display: "flex",
-        minHeight: "100vh",
-        direction: "rtl",
-        fontFamily: "Arial, sans-serif",
-        background: "#f3f4f6",
-      }}
-    >
-      <aside
-        style={{
-          width: 240,
-          flexShrink: 0,
-          background: "#1e293b",
-          color: "#fff",
-          padding: "20px 12px",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 24, padding: "0 8px" }}>
-          EasyOrder
+    <div className="main-layout">
+      <aside className="main-layout__sidebar">
+        <div className="main-layout__logo-wrap">
+          <img src={logo} alt="Enaya" className="main-layout__logo" />
         </div>
-        <nav style={{ display: "flex", flexDirection: "column" }}>
+        <nav className="main-layout__nav">
           <NavLink
             to="/"
             end
-            style={({ isActive }) => ({
-              ...linkStyle,
-              background: isActive ? "#334155" : "transparent",
-              fontWeight: isActive ? 600 : 400,
-            })}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
           >
+            <span className="main-layout__icon">🏠</span>
             الرئيسية
           </NavLink>
           <NavLink
             to="/orders"
-            style={({ isActive }) => ({
-              ...linkStyle,
-              background: isActive ? "#334155" : "transparent",
-              fontWeight: isActive ? 600 : 400,
-            })}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
           >
+            <span className="main-layout__icon">📦</span>
             الطلبات
           </NavLink>
           <NavLink
             to="/orders/stats"
-            style={({ isActive }) => ({
-              ...linkStyle,
-              background: isActive ? "#334155" : "transparent",
-              fontWeight: isActive ? 600 : 400,
-            })}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
           >
+            <span className="main-layout__icon">📊</span>
             إحصائيات الطلبات
           </NavLink>
           <NavLink
             to="/products"
-            style={({ isActive }) => ({
-              ...linkStyle,
-              background: isActive ? "#334155" : "transparent",
-              fontWeight: isActive ? 600 : 400,
-            })}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
           >
-            منتجات 
+            <span className="main-layout__icon">🧴</span>
+            منتجات
           </NavLink>
           <NavLink
             to="/employees"
-            style={({ isActive }) => ({
-              ...linkStyle,
-              background: isActive ? "#334155" : "transparent",
-              fontWeight: isActive ? 600 : 400,
-            })}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
           >
+            <span className="main-layout__icon">👥</span>
             الموظفين
           </NavLink>
         </nav>
+        <button type="button" onClick={handleLogout} className="main-layout__logout">
+          تسجيل الخروج
+        </button>
       </aside>
-      <main style={{ flex: 1, overflow: "auto" }}>
+      <main className="main-layout__content">
         <Outlet />
       </main>
     </div>

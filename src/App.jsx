@@ -1,14 +1,14 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import MainLayout from "./layouts/MainLayout";
-import HomePage from "./pages/HomePage";
-import CreateOrderPage from "./pages/CreateOrderPage";
-import EmployeesPage from "./pages/EmployeesPage";
-import LoginPage from "./pages/LoginPage";
+import HomePage from "./pages/home/HomePage";
+import CreateOrderPage from "./pages/orders/CreateOrderPage";
+import EmployeesPage from "./pages/employees/EmployeesPage";
+import LoginPage from "./pages/login/LoginPage";
 import OrderDetailsPage from "./pages/OrderDetailsPage";
-import OrderPayloadDetailsPage from "./pages/OrderPayloadDetailsPage";
-import OrdersPage from "./pages/OrdersPage";
+import OrderPayloadDetailsPage from "./pages/orders/OrderPayloadDetailsPage";
+import OrdersPage from "./pages/orders/OrdersPage";
 import OrdersStatsPage from "./pages/OrdersStatsPage";
-import ProductsPage from "./pages/ProductsPage";
+import ProductsPage from "./pages/products/ProductsPage";
 import { hasValidStoredToken } from "./utils/auth";
 
 function RequireAuth({ children }) {

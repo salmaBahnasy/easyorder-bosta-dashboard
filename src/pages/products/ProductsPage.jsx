@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { getExternalProducts } from "../api/easyOrdersApi";
+import { getExternalProducts } from "../../api/easyOrdersApi";
+import { colors } from "../../constants/colors";
+import "./ProductsPage.css";
 
 function normalizeProductList(payload) {
   if (!payload) return [];
@@ -134,33 +136,48 @@ export default function ProductsPage() {
       : null);
 
   return (
-    <div style={{ padding: 24, direction: "rtl", fontFamily: "Arial, sans-serif" }}>
-      <h1 style={{ marginTop: 0 }}>منتجات</h1>
-     
+    <div className="products-page">
+      <section className="products-page__header">
+        <div>
+          <h1>المنتجات</h1>
+          <p>إدارة وعرض منتجات المتجر بشكل حديث وسريع.</p>
+        </div>
+        <button
+          type="button"
+          className="products-page__add-btn"
+          onClick={() => alert("صفحة إضافة منتج سيتم تنفيذها قريبًا")}
+        >
+          + إضافة منتج
+        </button>
+      </section>
+
+      <form className="products-page__toolbar" onSubmit={handleSearchSubmit}>
+        <input
+          className="products-page__search-input"
+          type="text"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="ابحثي باسم المنتج..."
+        />
+        <button type="submit" className="products-page__toolbar-btn">
+          بحث
+        </button>
+        {activeSearch ? (
+          <button
+            type="button"
+            className="products-page__toolbar-btn products-page__toolbar-btn--outline"
+            onClick={handleClearSearch}
+          >
+            مسح
+          </button>
+        ) : null}
+      </form>
 
       {!hasApiKey ? (
-        <div
-          style={{
-            background: "#fef3c7",
-            border: "1px solid #f59e0b",
-            borderRadius: 8,
-            padding: 16,
-            marginBottom: 16,
-          }}
-        >
+        <div className="products-page__warning">
           <strong>مفتاح Easy Orders غير مضبوط.</strong> أضيفي في ملف{" "}
           <code>.env</code>:
-          <pre
-            style={{
-              marginTop: 12,
-              padding: 12,
-              background: "#fff",
-              borderRadius: 6,
-              overflow: "auto",
-              direction: "ltr",
-              textAlign: "left",
-            }}
-          >
+          <pre className="products-page__warning-code">
             VITE_EASY_ORDERS_API_KEY=your_api_key_here
           </pre>
           ثم أعدي تشغيل <code>npm run dev</code>. الترويسة المرسلة:{" "}
@@ -169,75 +186,58 @@ export default function ProductsPage() {
       ) : null}
 
       {!hasApiKey ? null : loading ? (
-        <p>جاري تحميل المنتجات...</p>
+        <p className="products-page__state">جاري تحميل المنتجات...</p>
       ) : error ? (
-        <p style={{ color: "#b91c1c" }}>{error}</p>
+        <p className="products-page__state products-page__state--error">{error}</p>
       ) : products.length === 0 ? (
-        <p>لا توجد منتجات في الاستجابة.</p>
+        <p className="products-page__state">لا توجد منتجات في الاستجابة.</p>
       ) : (
         <>
-          <div style={{ overflowX: "auto" }}>
-            <table
-              border="1"
-              cellPadding="10"
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                background: "#fff",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th>الصورة</th>
-                  <th>الاسم</th>
-                  <th>السعر</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.map((item, index) => {
-                  const id = item?.id ?? item?.sku ?? index;
-                  const { name, priceLabel, thumbUrl, quantityLabel } =
-                    getProductDisplayFields(item);
-                  return (
-                    <tr key={String(id)}>
-                      <td style={{ width: 80 }}>
-                        {thumbUrl ? (
-                          <img
-                            src={thumbUrl}
-                            alt=""
-                            style={{
-                              width: 64,
-                              height: 64,
-                              objectFit: "cover",
-                              borderRadius: 6,
-                              display: "block",
-                            }}
-                          />
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td>{name}</td>
-                      <td>{priceLabel !== "—" ? `${priceLabel} ج` : "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="products-grid">
+            {products.map((item, index) => {
+              const id = item?.id ?? item?.sku ?? index;
+              const { name, priceLabel, thumbUrl } = getProductDisplayFields(item);
+              return (
+                <article key={String(id)} className="product-card">
+                  <div className="product-card__image-wrap">
+                    {thumbUrl ? (
+                      <img src={thumbUrl} alt={name} className="product-card__image" />
+                    ) : (
+                      <span className="product-card__image-placeholder">لا توجد صورة</span>
+                    )}
+                  </div>
+
+                  <div className="product-card__content">
+                    <h3>{name}</h3>
+                    <p>{priceLabel !== "—" ? `${priceLabel} ج` : "—"}</p>
+                  </div>
+
+                  <div className="product-card__actions">
+                    <button
+                      type="button"
+                      className="product-card__action-btn product-card__action-btn--edit"
+                      onClick={() => alert(`تعديل المنتج: ${name}`)}
+                    >
+                      ✏️ تعديل
+                    </button>
+                    <button
+                      type="button"
+                      className="product-card__action-btn product-card__action-btn--delete"
+                      onClick={() => alert(`حذف المنتج: ${name}`)}
+                    >
+                      🗑 حذف
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
 
           {(totalPages != null && totalPages > 1) || page > 1 ? (
-            <div
-              style={{
-                marginTop: 16,
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
+            <div className="products-page__pagination">
               <button
                 type="button"
+                className="products-page__toolbar-btn products-page__toolbar-btn--outline"
                 disabled={page <= 1 || loading}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
@@ -249,6 +249,8 @@ export default function ProductsPage() {
               </span>
               <button
                 type="button"
+                className="products-page__toolbar-btn"
+                style={{ backgroundColor: colors.primaryBlue, color: "#fff" }}
                 disabled={
                   loading ||
                   (totalPages != null ? page >= totalPages : products.length < limit)

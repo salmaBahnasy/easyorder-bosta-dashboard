@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getZones, updateOrder, updateOrderStatus } from "../api/ordersApi";
+import { getZones, updateOrder, updateOrderStatus } from "../../api/ordersApi";
 import {
   orderAddress,
   orderCustomer,
   orderDisplayId,
   orderPhone,
   orderTotalCost,
-} from "../utils/orderDisplay";
+} from "../../utils/orderDisplay";
+import "./OrderPayloadDetailsPage.css";
 
 export default function OrderPayloadDetailsPage() {
   const navigate = useNavigate();
@@ -38,6 +39,7 @@ export default function OrderPayloadDetailsPage() {
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [localStatusHistory, setLocalStatusHistory] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,6 +188,54 @@ export default function OrderPayloadDetailsPage() {
     return backendToUiStatusMap[normalized] ?? String(statusValue ?? "جديد");
   }
 
+  function formatHistoryTime(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat("ar-EG", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  function normalizeHistoryItem(item) {
+    if (!item || typeof item !== "object") return null;
+    const rawStatus =
+      item.status ?? item.toStatus ?? item.newStatus ?? item.orderStatus ?? item.label;
+    const status = rawStatus ? mapBackendStatusToUi(rawStatus) : "—";
+    const user =
+      item.userName ??
+      item.user_name ??
+      item.updatedByName ??
+      item.updated_by_name ??
+      item.createdByName ??
+      item.created_by_name ??
+      item.user ??
+      "—";
+    const timestamp =
+      item.timestamp ??
+      item.updatedAt ??
+      item.updated_at ??
+      item.createdAt ??
+      item.created_at ??
+      null;
+    return { status, user, timestamp };
+  }
+
+  function getActiveUserName() {
+    try {
+      const raw = localStorage.getItem("easyorder_user");
+      if (!raw) return "المستخدم الحالي";
+      const parsed = JSON.parse(raw);
+      return parsed?.name ?? parsed?.full_name ?? parsed?.email ?? "المستخدم الحالي";
+    } catch {
+      return "المستخدم الحالي";
+    }
+  }
+
   function resolveStatusFromAllowed(statusLabel, allowedStatuses = []) {
     const normalizedAllowed = allowedStatuses.map((v) => String(v).trim());
     if (normalizedAllowed.length === 0) return null;
@@ -223,6 +273,14 @@ export default function OrderPayloadDetailsPage() {
       setStatusUpdating(true);
       await updateOrderStatus(orderIdForStatusUpdate, backendStatus);
       setSelectedStatus(statusLabel);
+      setLocalStatusHistory((prev) => [
+        {
+          status: statusLabel,
+          user: getActiveUserName(),
+          timestamp: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
       return true;
     } catch (error) {
       console.log(error);
@@ -310,8 +368,12 @@ export default function OrderPayloadDetailsPage() {
 
   if (!order) {
     return (
-      <div style={{ padding: 24, direction: "rtl", fontFamily: "Arial" }}>
-        <button type="button" onClick={handleBack} style={{ marginBottom: 16 }}>
+      <div className="order-details-page">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="order-details-page__btn order-details-page__btn--outline"
+        >
           رجوع
         </button>
         <p>لا توجد بيانات أوردر. افتحي الصفحة من قائمة الطلبات.</p>
@@ -367,213 +429,266 @@ export default function OrderPayloadDetailsPage() {
     جديد: "#7f8c8d",
   };
   const statusBadgeColor = statusColorMap[currentOrderStatus] ?? "#7f8c8d";
+  const summaryTotal = form.codAmount || orderTotalCost(order) || form.price || "0";
+  const backendStatusHistory = useMemo(() => {
+    const source =
+      (Array.isArray(order?.statusHistory) && order.statusHistory) ||
+      (Array.isArray(order?.status_history) && order.status_history) ||
+      (Array.isArray(order?.timeline?.statusChanges) && order.timeline.statusChanges) ||
+      (Array.isArray(order?.timeline?.history) && order.timeline.history) ||
+      (Array.isArray(order?.history) && order.history) ||
+      [];
+    return source.map(normalizeHistoryItem).filter(Boolean);
+  }, [order]);
+
+  const statusHistory = useMemo(() => {
+    const merged = [...localStatusHistory, ...backendStatusHistory];
+    if (merged.length > 0) return merged;
+    return [
+      {
+        status: currentOrderStatus,
+        user:
+          order?.updatedByName ??
+          order?.updated_by_name ??
+          order?.createdByName ??
+          order?.created_by_name ??
+          "غير معروف",
+        timestamp: order?.updated_at ?? order?.created_at ?? order?.date ?? null,
+      },
+    ];
+  }, [backendStatusHistory, currentOrderStatus, localStatusHistory, order]);
+
+  const lastUpdateBy = statusHistory[0]?.user ?? "غير معروف";
 
   return (
-    <div style={{ padding: 24, direction: "rtl", fontFamily: "Arial" }}>
-      <button type="button" onClick={handleBack} style={{ marginBottom: 16 }}>
-        رجوع
-      </button>
-
-      <h2 style={{ marginTop: 0 }}>تفاصيل الطلب #{orderDisplayId(order)}</h2>
-      <div style={{ marginBottom: 12 }}>
-        <span
-          style={{
-            display: "inline-block",
-            background: statusBadgeColor,
-            color: "#fff",
-            padding: "6px 12px",
-            borderRadius: 999,
-            fontWeight: 700,
-            fontSize: 13,
-          }}
+    <div className="order-details-page">
+      <div className="order-details-page__topbar">
+        <div className="order-details-page__title">
+          <h1>تفاصيل الطلب #{orderDisplayId(order)}</h1>
+          <span className="order-details-page__badge" style={{ background: statusBadgeColor }}>
+            {currentOrderStatus}
+          </span>
+        </div>
+        <span className="order-details-page__updated-by">آخر تحديث بواسطة: {lastUpdateBy}</span>
+        <button
+          type="button"
+          onClick={handleBack}
+          className="order-details-page__btn order-details-page__btn--outline"
         >
-          حالة الأوردر: {currentOrderStatus}
-        </span>
+          رجوع
+        </button>
       </div>
 
-      <div
-        style={{
-          background: "#fff",
-          padding: 16,
-          border: "1px solid #ddd",
-          display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(220px, 1fr))",
-          gap: 12,
-        }}
-      >
-    
-        <label>
-          كود المنتج (SKU)
-          <input
-            value={form.skuCode}
-            onChange={(e) => setField("skuCode", e.target.value)}
-          />
-        </label>
-        <label>
-          الكمية
-          <input
-            type="number"
-            value={form.quantity}
-            onChange={(e) => setField("quantity", e.target.value)}
-          />
-        </label>
-        <label>
-          السعر
-          <input
-            type="number"
-            value={form.price}
-            onChange={(e) => setField("price", e.target.value)}
-          />
-        </label>
-        <label style={{ gridColumn: "1 / -1" }}>
-          العنوان (السطر الأول)
-          <input
-            style={{ width: "100%" }}
-            value={form.firstLine}
-            onChange={(e) => setField("firstLine", e.target.value)}
-          />
-        </label>
-        <label>
-          المدينة
-          <select
-            value={form.cityId}
-            onChange={(e) => {
-              setField("cityId", e.target.value);
-              setField("districtId", "");
-            }}
-            disabled={zonesLoading}
-          >
-            <option value="">اختر المدينة</option>
-            {zones.map((zone) => {
-              const id = zone?._id ?? zone?.id ?? zone?.zoneId;
-              return (
-                <option key={id} value={id}>
-                  {zone?.name ?? zone?.zoneName ?? "—"}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        <label>
-          المنطقة
-          <select
-            value={form.districtId}
-            onChange={(e) => setField("districtId", e.target.value)}
-            disabled={!form.cityId}
-          >
-            <option value="">اختر المنطقة</option>
-            {districts.map((district) => {
-              const id = district?._id ?? district?.id ?? district?.districtId;
-              return (
-                <option key={id} value={id}>
-                  {district?.name ?? district?.districtName ?? "—"}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        <label>
-          مبلغ التحصيل (COD)
-          <input
-            value={form.codAmount}
-            onChange={(e) => setField("codAmount", e.target.value)}
-          />
-        </label>
-        <label>
-          السماح بفتح الشحنة
-          <select
-            value={String(form.allowToOpenPackage)}
-            onChange={(e) =>
-              setField("allowToOpenPackage", e.target.value === "true")
-            }
-          >
-            <option value="false">false</option>
-            <option value="true">true</option>
-          </select>
-        </label>
-        <label style={{ gridColumn: "1 / -1" }}>
-          ملاحظات
-          <input
-            style={{ width: "100%" }}
-            value={form.note}
-            onChange={(e) => setField("note", e.target.value)}
-          />
-        </label>
-        <label>
-          اسم العميل
-          <input
-            value={form.firstName}
-            onChange={(e) => setField("firstName", e.target.value)}
-          />
-        </label>
-        <label>
-          رقم الموبايل
-          <input
-            value={form.mobile}
-            onChange={(e) => setField("mobile", e.target.value)}
-          />
-        </label>
-      </div>
+      <div className="order-details-page__layout">
+        <div>
+          <section className="order-details-page__card">
+            <h3>بيانات الطلب</h3>
+            <div className="order-details-page__fields">
+              <label className="order-details-page__field">
+                كود المنتج (SKU)
+                <input
+                  className="order-details-page__input"
+                  value={form.skuCode}
+                  onChange={(e) => setField("skuCode", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field">
+                الكمية
+                <input
+                  className="order-details-page__input"
+                  type="number"
+                  value={form.quantity}
+                  onChange={(e) => setField("quantity", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field">
+                السعر
+                <input
+                  className="order-details-page__input"
+                  type="number"
+                  value={form.price}
+                  onChange={(e) => setField("price", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field">
+                مبلغ التحصيل (COD)
+                <input
+                  className="order-details-page__input"
+                  value={form.codAmount}
+                  onChange={(e) => setField("codAmount", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field order-details-page__field--full">
+                العنوان (السطر الأول)
+                <input
+                  className="order-details-page__input"
+                  value={form.firstLine}
+                  onChange={(e) => setField("firstLine", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field">
+                المدينة
+                <select
+                  className="order-details-page__input"
+                  value={form.cityId}
+                  onChange={(e) => {
+                    setField("cityId", e.target.value);
+                    setField("districtId", "");
+                  }}
+                  disabled={zonesLoading}
+                >
+                  <option value="">اختر المدينة</option>
+                  {zones.map((zone) => {
+                    const id = zone?._id ?? zone?.id ?? zone?.zoneId;
+                    return (
+                      <option key={id} value={id}>
+                        {zone?.name ?? zone?.zoneName ?? "—"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <label className="order-details-page__field">
+                المنطقة
+                <select
+                  className="order-details-page__input"
+                  value={form.districtId}
+                  onChange={(e) => setField("districtId", e.target.value)}
+                  disabled={!form.cityId}
+                >
+                  <option value="">اختر المنطقة</option>
+                  {districts.map((district) => {
+                    const id = district?._id ?? district?.id ?? district?.districtId;
+                    return (
+                      <option key={id} value={id}>
+                        {district?.name ?? district?.districtName ?? "—"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <label className="order-details-page__field">
+                السماح بفتح الشحنة
+                <select
+                  className="order-details-page__input"
+                  value={String(form.allowToOpenPackage)}
+                  onChange={(e) =>
+                    setField("allowToOpenPackage", e.target.value === "true")
+                  }
+                >
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </label>
+              <label className="order-details-page__field">
+                اسم العميل
+                <input
+                  className="order-details-page__input"
+                  value={form.firstName}
+                  onChange={(e) => setField("firstName", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field">
+                رقم الموبايل
+                <input
+                  className="order-details-page__input"
+                  value={form.mobile}
+                  onChange={(e) => setField("mobile", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field order-details-page__field--full">
+                ملاحظات
+                <input
+                  className="order-details-page__input"
+                  value={form.note}
+                  onChange={(e) => setField("note", e.target.value)}
+                />
+              </label>
+            </div>
+          </section>
 
-      <div
-        style={{
-          marginTop: 16,
-          background: "#fff",
-          border: "1px solid #ddd",
-          padding: 16,
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: 12 }}>تغيير الحالة</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {statusButtons.map((status) => (
-            <button
-              key={status.key}
-              type="button"
-              onClick={() => handleStatusClick(status.label)}
-              disabled={statusUpdating}
-              style={{
-                background: status.bg,
-                color: "#fff",
-                border: "none",
-                padding: "8px 14px",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontWeight: 600,
-                opacity: statusUpdating ? 0.7 : 1,
-              }}
-            >
-              {status.label}
-            </button>
-          ))}
+          <section className="order-details-page__card">
+            <h3>تغيير الحالة</h3>
+            <div className="order-details-page__status-actions">
+              {statusButtons.map((status) => (
+                <button
+                  key={status.key}
+                  type="button"
+                  onClick={() => handleStatusClick(status.label)}
+                  disabled={statusUpdating}
+                  className="order-details-page__pill"
+                  style={{ background: status.bg, opacity: statusUpdating ? 0.7 : 1 }}
+                >
+                  {status.label}
+                </button>
+              ))}
 
-          <button
-            type="button"
-            onClick={handleConfirmOnly}
-            disabled={statusUpdating}
-            style={{
-              background: "#16a085",
-              color: "#fff",
-              border: "none",
-              padding: "8px 14px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontWeight: 600,
-              opacity: statusUpdating ? 0.7 : 1,
-            }}
-          >
-            تم التأكيد
-          </button>
+              <button
+                type="button"
+                onClick={handleConfirmOnly}
+                disabled={statusUpdating}
+                className="order-details-page__pill"
+                style={{ background: "#16a085", opacity: statusUpdating ? 0.7 : 1 }}
+              >
+                تم التأكيد
+              </button>
+            </div>
+
+            {selectedStatus && (
+              <p className="order-details-page__status-note">
+                الحالة الحالية: <strong>{selectedStatus}</strong>
+              </p>
+            )}
+          </section>
+
+          <section className="order-details-page__card">
+            <h3>سجل التعديلات</h3>
+            <ul className="order-details-page__history-list">
+              {statusHistory.map((entry, index) => (
+                <li key={`${entry.status}-${entry.timestamp}-${index}`} className="order-details-page__history-item">
+                  <strong>{entry.status}</strong>
+                  <span>{entry.user}</span>
+                  <time>{formatHistoryTime(entry.timestamp)}</time>
+                </li>
+              ))}
+            </ul>
+          </section>
         </div>
 
-        {selectedStatus && (
-          <p style={{ marginTop: 12, marginBottom: 0 }}>
-            الحالة الحالية: <strong>{selectedStatus}</strong>
-          </p>
-        )}
+        <aside className="order-details-page__card">
+          <h3>ملخص الطلب</h3>
+          <div className="order-details-page__summary-list">
+            <div className="order-details-page__summary-row">
+              <span>العميل</span>
+              <strong>{form.firstName || "—"}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>الهاتف</span>
+              <strong>{form.mobile || "—"}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>SKU</span>
+              <strong>{form.skuCode || "—"}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>الكمية</span>
+              <strong>{form.quantity || 0}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>الإجمالي</span>
+              <strong>{summaryTotal} ج</strong>
+            </div>
+          </div>
+        </aside>
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        <button type="button" onClick={handleSaveOrderChanges} disabled={savingOrder}>
+      <div className="order-details-page__footer">
+        <button
+          type="button"
+          onClick={handleSaveOrderChanges}
+          disabled={savingOrder}
+          className="order-details-page__btn order-details-page__btn--primary"
+        >
           {savingOrder ? "جاري الحفظ..." : "حفظ تعديلات الطلب"}
         </button>
       </div>
