@@ -2,14 +2,12 @@ import {
   orderCustomer,
   orderDate,
   orderDisplayId,
-  orderPayment,
   orderPhone,
   orderProductBlock,
-  orderQuantity,
   orderRowKey,
   orderStatus,
-  orderTotalCost,
 } from "../utils/orderDisplay";
+import "./OrdersTable.css";
 
 function normalizeStatus(value) {
   return String(value ?? "")
@@ -22,19 +20,19 @@ function normalizeStatus(value) {
 function getStatusPresentation(value) {
   const normalized = normalizeStatus(value);
   const map = {
-    new: { label: "جديد", color: "#7f8c8d" },
-    canceled: { label: "لاغي", color: "#e74c3c" },
-    cancelled: { label: "لاغي", color: "#e74c3c" },
-    "no replay": { label: "لا يرد", color: "#f39c12" },
-    "no reply": { label: "لا يرد", color: "#f39c12" },
-    "follow up": { label: "متابعة", color: "#3498db" },
-    followup: { label: "متابعة", color: "#3498db" },
-    repeater: { label: "مكرر", color: "#9b59b6" },
-    duplicate: { label: "مكرر", color: "#9b59b6" },
-    confirmed: { label: "تم التأكيد", color: "#16a085" },
-    shipped: { label: "تم الشحن", color: "#27ae60" },
+    new: { label: "جديد", tone: "gray" },
+    canceled: { label: "لاغي", tone: "red" },
+    cancelled: { label: "لاغي", tone: "red" },
+    "no replay": { label: "لا يرد", tone: "yellow" },
+    "no reply": { label: "لا يرد", tone: "yellow" },
+    "follow up": { label: "متابعة", tone: "gray" },
+    followup: { label: "متابعة", tone: "gray" },
+    repeater: { label: "مكرر", tone: "gray" },
+    duplicate: { label: "مكرر", tone: "gray" },
+    confirmed: { label: "تم التأكيد", tone: "green" },
+    shipped: { label: "تم الشحن", tone: "green" },
   };
-  return map[normalized] ?? { label: value || "—", color: "#7f8c8d" };
+  return map[normalized] ?? { label: value || "—", tone: "gray" };
 }
 
 function formatDateTime(value) {
@@ -54,16 +52,8 @@ function formatDateTime(value) {
 
 export default function OrdersTable({ orders, onViewDetails }) {
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table
-        border="1"
-        cellPadding="10"
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          background: "#fff",
-        }}
-      >
+    <div className="orders-table-wrap">
+      <table className="orders-table">
         <thead>
           <tr>
             <th>رقم الطلب</th>
@@ -83,35 +73,23 @@ export default function OrdersTable({ orders, onViewDetails }) {
           {orders.map((order, index) => {
             const { name: productName, variant: productVariant } =
               orderProductBlock(order);
-            const totalVal = orderTotalCost(order);
             const statusView = getStatusPresentation(orderStatus(order));
             return (
               <tr
                 key={orderRowKey(order, index)}
                 onClick={() => onViewDetails(order)}
-                style={{ cursor: "pointer" }}
+                className="orders-table__row"
                 title="اضغطي لفتح تفاصيل الطلب"
               >
                 <td>{orderDisplayId(order)}</td>
                 <td>{orderCustomer(order)}</td>
                 <td>{orderPhone(order)}</td>
                 <td>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      background: statusView.color,
-                      color: "#fff",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <span className={`orders-table__badge orders-table__badge--${statusView.tone}`}>
                     {statusView.label}
                   </span>
                 </td>
-                <td style={{ minWidth: 220 }}>
+                <td className="orders-table__product-cell">
                   <strong>{productName}</strong>
                   {productVariant ? (
                     <>
@@ -124,16 +102,25 @@ export default function OrdersTable({ orders, onViewDetails }) {
                 {/* <td>{totalVal != null ? `${totalVal} ج` : "—"}</td> */}
                 {/* <td>{orderPayment(order)}</td> */}
                 <td>{formatDateTime(orderDate(order))}</td>
-                <td
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ cursor: "default" }}
-                >
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <div className="orders-table__actions">
                     <button
                       onClick={() => onViewDetails(order)}
                       type="button"
+                      className="orders-table__icon-btn"
+                      title="عرض التفاصيل"
+                      aria-label="عرض التفاصيل"
                     >
-                      تفاصيل الطلب
+                      👁
+                    </button>
+                    <button
+                      onClick={() => onViewDetails(order)}
+                      type="button"
+                      className="orders-table__icon-btn"
+                      title="تعديل الطلب"
+                      aria-label="تعديل الطلب"
+                    >
+                      ✏️
                     </button>
                   </div>
                 </td>

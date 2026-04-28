@@ -8,6 +8,12 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem("easyorder_token");
+    if (token) {
+      config.headers = config.headers ?? {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
     const fullUrl = `${config.baseURL ?? ""}${config.url ?? ""}`;
     console.log("[ordersApi] REQUEST", {
       method: (config.method ?? "get").toUpperCase(),
@@ -47,6 +53,8 @@ apiClient.interceptors.response.use(
 export async function getOrders({
   page = 1,
   limit = 20,
+  status,
+  employeeId,
   from,
   to,
 } = {}) {
@@ -54,6 +62,8 @@ export async function getOrders({
     params: {
       page,
       limit,
+      status,
+      employeeId,
       from,
       to,
     },

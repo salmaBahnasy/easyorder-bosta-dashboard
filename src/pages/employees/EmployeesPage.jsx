@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createEmployee,
   deleteEmployee,
   getEmployees,
   updateEmployee,
-} from "../api/ordersApi";
+} from "../../api/ordersApi";
+import "./EmployeesPage.css";
 
 const initialForm = {
   name: "",
@@ -14,6 +15,7 @@ const initialForm = {
 };
 
 export default function EmployeesPage() {
+  const formCardRef = useRef(null);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,6 +61,21 @@ export default function EmployeesPage() {
       password: "",
       role: employee.role ?? "junior",
     });
+  }
+
+  function handleAddEmployeeClick() {
+    resetForm();
+    formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function getInitials(name) {
+    const words = String(name ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (words.length === 0) return "؟";
+    if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
+    return `${words[0].slice(0, 1)}${words[1].slice(0, 1)}`.toUpperCase();
   }
 
   async function handleSubmit(e) {
@@ -115,34 +132,40 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div style={{ padding: 24, direction: "rtl", fontFamily: "Arial, sans-serif" }}>
-      <h1 style={{ marginTop: 0 }}>إدارة الموظفين</h1>
+    <div className="employees-page">
+      <section className="employees-page__header">
+        <div>
+          <h1>إدارة الموظفين</h1>
+          <p>إضافة وتعديل بيانات الموظفين ومتابعة الأدوار داخل النظام.</p>
+        </div>
+        <button
+          type="button"
+          className="employees-page__add-btn"
+          onClick={handleAddEmployeeClick}
+        >
+          + إضافة موظف
+        </button>
+      </section>
 
       <form
+        ref={formCardRef}
         onSubmit={handleSubmit}
-        style={{
-          background: "#fff",
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(220px, 1fr))",
-          gap: 10,
-          marginBottom: 16,
-        }}
+        className="employees-page__form-card"
       >
-        <label style={{ display: "grid", gap: 6 }}>
+        <label className="employees-page__field">
           الاسم
           <input
+            className="employees-page__input"
             value={form.name}
             onChange={(e) => setField("name", e.target.value)}
             required
           />
         </label>
 
-        <label style={{ display: "grid", gap: 6 }}>
+        <label className="employees-page__field">
           البريد الإلكتروني
           <input
+            className="employees-page__input"
             type="email"
             value={form.email}
             onChange={(e) => setField("email", e.target.value)}
@@ -150,9 +173,10 @@ export default function EmployeesPage() {
           />
         </label>
 
-        <label style={{ display: "grid", gap: 6 }}>
+        <label className="employees-page__field">
           كلمة المرور {editingId ? "(اختياري للتعديل)" : ""}
           <input
+            className="employees-page__input"
             type="password"
             value={form.password}
             onChange={(e) => setField("password", e.target.value)}
@@ -160,63 +184,92 @@ export default function EmployeesPage() {
           />
         </label>
 
-        <label style={{ display: "grid", gap: 6 }}>
+        <label className="employees-page__field">
           الدور
-          <select value={form.role} onChange={(e) => setField("role", e.target.value)}>
+          <select
+            className="employees-page__input"
+            value={form.role}
+            onChange={(e) => setField("role", e.target.value)}
+          >
             <option value="junior">junior</option>
             <option value="senior">senior</option>
           </select>
         </label>
 
-        <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1" }}>
-          <button type="submit" disabled={saving}>
+        <div className="employees-page__form-actions">
+          <button type="submit" disabled={saving} className="employees-page__btn employees-page__btn--primary">
             {saving ? "جاري الحفظ..." : editingId ? "تحديث الموظف" : "إضافة موظف"}
           </button>
           {editingId ? (
-            <button type="button" onClick={resetForm}>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="employees-page__btn employees-page__btn--outline"
+            >
               إلغاء التعديل
             </button>
           ) : null}
         </div>
       </form>
 
-      <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 8 }}>
+      <div className="employees-page__table-card">
         {loading ? (
-          <p style={{ padding: 16 }}>جاري تحميل الموظفين...</p>
+          <p className="employees-page__loading">جاري تحميل الموظفين...</p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table
-              border="1"
-              cellPadding="10"
-              style={{ width: "100%", borderCollapse: "collapse" }}
-            >
+          <div className="employees-page__table-wrap">
+            <table className="employees-page__table">
               <thead>
                 <tr>
                   <th>الاسم</th>
                   <th>الإيميل</th>
                   <th>الدور</th>
-                  <th>تاريخ الإنشاء</th>
+                  {/* <th>تاريخ الإنشاء</th> */}
                   <th>إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {employees.map((employee) => (
                   <tr key={employee.id}>
-                    <td>{employee.name ?? "—"}</td>
-                    <td>{employee.email ?? "—"}</td>
-                    <td>{employee.role ?? "—"}</td>
-                    <td>{employee.created_at ?? "—"}</td>
                     <td>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                        <button type="button" onClick={() => startEdit(employee)}>
-                          تعديل
+                      <div className="employees-page__name-cell">
+                        <span className="employees-page__avatar">
+                          {getInitials(employee.name)}
+                        </span>
+                        <span>{employee.name ?? "—"}</span>
+                      </div>
+                    </td>
+                    <td>{employee.email ?? "—"}</td>
+                    <td>
+                      <span
+                        className={`employees-page__role-badge ${
+                          employee.role === "senior"
+                            ? "employees-page__role-badge--senior"
+                            : "employees-page__role-badge--junior"
+                        }`}
+                      >
+                        {employee.role ?? "—"}
+                      </span>
+                    </td>
+                    {/* <td>{employee.created_at ?? "—"}</td> */}
+                    <td>
+                      <div className="employees-page__table-actions">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(employee)}
+                          className="employees-page__icon-btn"
+                          title="تعديل"
+                          aria-label="تعديل"
+                        >
+                          ✏️
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(employee.id)}
-                          style={{ background: "#ef4444", color: "#fff", border: "none" }}
+                          className="employees-page__icon-btn employees-page__icon-btn--danger"
+                          title="حذف"
+                          aria-label="حذف"
                         >
-                          حذف
+                          🗑
                         </button>
                       </div>
                     </td>
@@ -224,7 +277,7 @@ export default function EmployeesPage() {
                 ))}
                 {employees.length === 0 ? (
                   <tr>
-                    <td colSpan="5" style={{ textAlign: "center", padding: 14 }}>
+                    <td colSpan="5" className="employees-page__empty">
                       لا يوجد موظفين
                     </td>
                   </tr>
