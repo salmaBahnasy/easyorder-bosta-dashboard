@@ -1,10 +1,71 @@
 import { useEffect, useMemo, useState } from "react";
-import { getOrdersStats } from "../../api/ordersApi";
+import { getEmployees, getOrdersStats } from "../../api/ordersApi";
 import { colors } from "../../constants/colors";
 import ChartCard from "../../components/dashboard/ChartCard";
 import LatestOrdersTable from "../../components/dashboard/LatestOrdersTable";
 import StatCard from "../../components/dashboard/StatCard";
 import "./HomePage.css";
+
+function normalizeStatsPayload(response) {
+  return response?.stats ?? response?.data?.stats ?? response?.data ?? response;
+}
+
+function isoUtcStartOfDay(dateStr) {
+  if (!dateStr || typeof dateStr !== "string") return null;
+  const day = dateStr.slice(0, 10);
+  return `${day}T00:00:00.000Z`;
+}
+
+function isoUtcEndOfDay(dateStr) {
+  if (!dateStr || typeof dateStr !== "string") return null;
+  const day = dateStr.slice(0, 10);
+  return `${day}T23:59:59.999Z`;
+}
+
+function buildStatsQueryParams({ dateRange, dateFrom, dateTo, employeeId }) {
+  const params = {};
+  if (employeeId) params.employeeId = employeeId;
+
+  if (dateFrom && dateTo) {
+    params.from = isoUtcStartOfDay(dateFrom);
+    params.to = isoUtcEndOfDay(dateTo);
+    return params;
+  }
+
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const d = now.getUTCDate();
+  const todayEnd = new Date(Date.UTC(y, m, d, 23, 59, 59, 999)).toISOString();
+
+  if (dateRange === "today") {
+    params.from = new Date(Date.UTC(y, m, d, 0, 0, 0, 0)).toISOString();
+    params.to = todayEnd;
+  } else if (dateRange === "7d") {
+    params.from = new Date(Date.UTC(y, m, d - 6, 0, 0, 0, 0)).toISOString();
+    params.to = todayEnd;
+  } else if (dateRange === "month") {
+    params.from = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0)).toISOString();
+    params.to = todayEnd;
+  }
+
+  return params;
+}
+
+function pickStat(stats, ...keys) {
+  if (!stats) return 0;
+  for (const k of keys) {
+    const v = stats[k];
+    if (v != null && v !== "") return Number(v);
+  }
+  return 0;
+}
+
+async function fetchDashboardStats(filters) {
+  const query = buildStatsQueryParams(filters);
+  const response = await getOrdersStats(query);
+  return normalizeStatsPayload(response) ?? {};
+}
 
 export default function HomePage() {
   const [stats, setStats] = useState(null);
@@ -12,13 +73,69 @@ export default function HomePage() {
   const [dateRange, setDateRange] = useState("7d");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [employees, setEmployees] = useState([]);
+  const [employeeFilter, setEmployeeFilter] = useState("");
 
-  async function loadStats() {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEmployees() {
+      try {
+        const result = await getEmployees();
+        const list = Array.isArray(result?.data)
+          ? result.data
+          : Array.isArray(result?.employees)
+            ? result.employees
+            : [];
+        if (!cancelled) setEmployees(list);
+      } catch (error) {
+        console.log(error);
+        if (!cancelled) setEmployees([]);
+      }
+    }
+
+    loadEmployees();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoadingStats(true);
+        const data = await fetchDashboardStats({
+          dateRange,
+          dateFrom,
+          dateTo,
+          employeeId: employeeFilter,
+        });
+        if (!cancelled) setStats(data);
+      } catch (error) {
+        console.log(error);
+        if (!cancelled) setStats(null);
+      } finally {
+        if (!cancelled) setLoadingStats(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dateRange, dateFrom, dateTo, employeeFilter]);
+
+  async function handleRefreshStats() {
     try {
       setLoadingStats(true);
-      const response = await getOrdersStats();
-      const data = response?.stats ?? response?.data?.stats ?? response?.data ?? response;
-      setStats(data ?? {});
+      const data = await fetchDashboardStats({
+        dateRange,
+        dateFrom,
+        dateTo,
+        employeeId: employeeFilter,
+      });
+      setStats(data);
     } catch (error) {
       console.log(error);
       setStats(null);
@@ -27,40 +144,37 @@ export default function HomePage() {
     }
   }
 
-  useEffect(() => {
-    let cancelled = false;
+  const totalOrders = pickStat(stats, "totalOrders", "total_orders");
+  const confirmedCount = pickStat(
+    stats,
+    "Confirmed",
+    "confirmed",
+    "confirmedOrders",
+  );
+  const shippedCount = pickStat(stats, "Shipped", "shipped", "shippedOrders");
+  const canceledCount = pickStat(
+    stats,
+    "canceled",
+    "cancelled",
+    "cancelledOrders",
+    "canceledOrders",
+  );
+  const noReplayCount = pickStat(
+    stats,
+    "no_replay",
+    "noReplay",
+    "noReplyOrders",
+  );
+  const followUpCount = pickStat(
+    stats,
+    "follow_up",
+    "followUp",
+    "followUpOrders",
+  );
+  const repeaterCount = pickStat(stats, "repeater", "repeaterOrders");
+  const totalSales = pickStat(stats, "totalRevenue", "totalSales", "total_sales");
 
-    async function loadDashboardStats() {
-      try {
-        setLoadingStats(true);
-        const response = await getOrdersStats();
-        const data = response?.stats ?? response?.data?.stats ?? response?.data ?? response;
-        if (!cancelled) {
-          setStats(data ?? {});
-        }
-      } catch (error) {
-        console.log(error);
-        if (!cancelled) {
-          setStats(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingStats(false);
-        }
-      }
-    }
-
-    loadDashboardStats();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const totalOrders = Number(stats?.totalOrders ?? 0);
-  const confirmedOrders = Number(stats?.confirmedOrders ?? 0);
-  const cancelledOrders = Number(stats?.canceledOrders ?? stats?.cancelledOrders ?? 0);
-  const noReplyOrders = Number(stats?.noReplyOrders ?? 0);
-  const totalSales = Number(stats?.totalRevenue ?? stats?.totalSales ?? 0);
+  const periodHint = "حسب الفترة والفلتر الحالي";
 
   const kpiCards = useMemo(
     () => [
@@ -69,56 +183,97 @@ export default function HomePage() {
         title: "إجمالي الطلبات",
         value: totalOrders.toLocaleString("ar-EG"),
         icon: "📦",
-        changeText: "+8.2% عن الفترة السابقة",
+        changeText: periodHint,
         accent: colors.primaryBlue,
       },
       {
         key: "confirmed",
-        title: "الطلبات المؤكدة",
-        value: confirmedOrders.toLocaleString("ar-EG"),
+        title: "مؤكد",
+        value: confirmedCount.toLocaleString("ar-EG"),
         icon: "✅",
-        changeText: "+5.4% عن الفترة السابقة",
+        changeText: periodHint,
         accent: colors.secondaryGreen,
       },
       {
-        key: "cancelled",
-        title: "الطلبات الملغية",
-        value: cancelledOrders.toLocaleString("ar-EG"),
+        key: "shipped",
+        title: "مشحون",
+        value: shippedCount.toLocaleString("ar-EG"),
+        icon: "🚚",
+        changeText: periodHint,
+        accent: "#0891b2",
+      },
+      {
+        key: "canceled",
+        title: "ملغي",
+        value: canceledCount.toLocaleString("ar-EG"),
         icon: "❌",
-        changeText: "-1.8% عن الفترة السابقة",
+        changeText: periodHint,
         accent: "#ea580c",
       },
       {
-        key: "noReply",
+        key: "no_replay",
         title: "لا يرد",
-        value: noReplyOrders.toLocaleString("ar-EG"),
-        icon: "📞",
-        changeText: "-0.9% عن الفترة السابقة",
+        value: noReplayCount.toLocaleString("ar-EG"),
+        icon: "📵",
+        changeText: periodHint,
         accent: "#7c3aed",
+      },
+      {
+        key: "follow_up",
+        title: "متابعة",
+        value: followUpCount.toLocaleString("ar-EG"),
+        icon: "📋",
+        changeText: periodHint,
+        accent: "#ca8a04",
+      },
+      {
+        key: "repeater",
+        title: "مكرر",
+        value: repeaterCount.toLocaleString("ar-EG"),
+        icon: "🔁",
+        changeText: periodHint,
+        accent: "#6366f1",
       },
       {
         key: "sales",
         title: "إجمالي المبيعات",
         value: `${totalSales.toLocaleString("ar-EG")} ج`,
         icon: "💰",
-        changeText: "+12.3% عن الفترة السابقة",
+        changeText: periodHint,
         accent: colors.primaryBlue,
       },
     ],
-    [cancelledOrders, confirmedOrders, noReplyOrders, totalOrders, totalSales]
+    [
+      canceledCount,
+      confirmedCount,
+      followUpCount,
+      noReplayCount,
+      repeaterCount,
+      shippedCount,
+      totalOrders,
+      totalSales,
+    ],
   );
 
   const orderStatusItems = useMemo(() => {
     const items = [
-      { label: "جديد", value: Number(stats?.newOrders ?? 0), color: "#5B6FB6" },
-      { label: "مؤكد", value: confirmedOrders, color: "#5DBB63" },
-      { label: "مشحون", value: Number(stats?.shippedOrders ?? 0), color: "#0891b2" },
-      { label: "ملغي", value: cancelledOrders, color: "#f97316" },
-      { label: "لا يرد", value: noReplyOrders, color: "#7c3aed" },
+      { label: "مؤكد", value: confirmedCount, color: "#5DBB63" },
+      { label: "مشحون", value: shippedCount, color: "#0891b2" },
+      { label: "ملغي", value: canceledCount, color: "#f97316" },
+      { label: "لا يرد", value: noReplayCount, color: "#7c3aed" },
+      { label: "متابعة", value: followUpCount, color: "#ca8a04" },
+      { label: "مكرر", value: repeaterCount, color: "#6366f1" },
     ];
     const maxValue = Math.max(...items.map((item) => item.value), 1);
     return { items, maxValue };
-  }, [stats, confirmedOrders, cancelledOrders, noReplyOrders]);
+  }, [
+    canceledCount,
+    confirmedCount,
+    followUpCount,
+    noReplayCount,
+    repeaterCount,
+    shippedCount,
+  ]);
 
   const dailySales = useMemo(() => {
     const fromApi = Array.isArray(stats?.dailySales) ? stats.dailySales : null;
@@ -185,6 +340,20 @@ export default function HomePage() {
        
         <div className="dashboard-topbar__controls">
           <select
+            className="dashboard-select dashboard-select--employee"
+            value={employeeFilter}
+            onChange={(e) => setEmployeeFilter(e.target.value)}
+            aria-label="تصفية حسب الموظف"
+            title="تصفية حسب الموظف"
+          >
+            <option value="">كل الموظفين</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={String(emp.id)}>
+                {emp.name ?? emp.email ?? `موظف #${emp.id}`}
+              </option>
+            ))}
+          </select>
+          {/* <select
             className="dashboard-select"
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
@@ -192,7 +361,7 @@ export default function HomePage() {
             <option value="today">اليوم</option>
             <option value="7d">آخر 7 أيام</option>
             <option value="month">الشهر</option>
-          </select>
+          </select> */}
           <input
             type="date"
             className="dashboard-date-input"
@@ -209,7 +378,7 @@ export default function HomePage() {
             aria-label="إلى تاريخ"
             title="إلى تاريخ"
           />
-          <button type="button" className="dashboard-refresh-btn" onClick={loadStats}>
+          <button type="button" className="dashboard-refresh-btn" onClick={handleRefreshStats}>
             تحديث الداتا
           </button>
         </div>
@@ -235,7 +404,10 @@ export default function HomePage() {
           </section>
 
           <section className="dashboard-middle">
-            <ChartCard title="الطلبات حسب الحالة" subtitle="توزيع الحالات خلال الفترة المحددة">
+            <ChartCard
+              title="الطلبات حسب الحالة"
+              subtitle="مؤكد، مشحون، ملغي، لا يرد، متابعة، مكرر — حسب الفترة والفلتر"
+            >
               <div className="dashboard-status-chart">
                 {orderStatusItems.items.map((item) => (
                   <div key={item.label} className="dashboard-status-row">

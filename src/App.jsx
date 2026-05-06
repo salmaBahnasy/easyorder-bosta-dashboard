@@ -8,6 +8,8 @@ import OrderDetailsPage from "./pages/OrderDetailsPage";
 import OrderPayloadDetailsPage from "./pages/orders/OrderPayloadDetailsPage";
 import OrdersPage from "./pages/orders/OrdersPage";
 import OrdersStatsPage from "./pages/OrdersStatsPage";
+import CreateProductPage from "./pages/products/CreateProductPage";
+import EditProductPage from "./pages/products/EditProductPage";
 import ProductsPage from "./pages/products/ProductsPage";
 import { hasValidStoredToken } from "./utils/auth";
 
@@ -49,6 +51,8 @@ function App() {
         <Route path="/orders/stats" element={<OrdersStatsPage />} />
         <Route path="/employees" element={<EmployeesPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/products/create" element={<CreateProductPage />} />
+        <Route path="/products/:productId/edit" element={<EditProductPage />} />
         <Route
           path="/orders/payload-details"
           element={<OrderPayloadDetailsPage />}

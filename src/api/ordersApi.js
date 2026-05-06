@@ -101,8 +101,13 @@ export async function updateOrder(orderId, payload) {
   return response.data;
 }
 
-export async function getOrdersStats() {
-  const response = await apiClient.get("/api/orders/stats");
+export async function getOrdersStats(params = {}) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+  const response = await apiClient.get("/api/orders/stats", { params: clean });
   return response.data;
 }
 
@@ -111,6 +116,21 @@ export async function getProducts({ page = 1, limit = 50, search } = {}) {
   const q = typeof search === "string" ? search.trim() : "";
   if (q) params.search = q;
   const response = await apiClient.get("/api/products", { params });
+  return response.data;
+}
+
+export async function getProductById(productId) {
+  const response = await apiClient.get(`/api/products/${productId}`);
+  return response.data;
+}
+
+export async function createProduct(payload) {
+  const response = await apiClient.post("/api/products", payload);
+  return response.data;
+}
+
+export async function updateProduct(productId, payload) {
+  const response = await apiClient.patch(`/api/products/${productId}`, payload);
   return response.data;
 }
 

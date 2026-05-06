@@ -64,7 +64,7 @@
 
 .dashboard-kpis {
   display: grid;
-  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -261,7 +261,7 @@
 
 @media (max-width: 1180px) {
   .dashboard-kpis {
-    grid-template-columns: repeat(3, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 
   .dashboard-bottom {
@@ -277,6 +277,16 @@
   .dashboard-topbar {
     flex-direction: column;
     align-items: start;
+  }
+
+  .dashboard-topbar__controls {
+    width: 100%;
+  }
+
+  .dashboard-select,
+  .dashboard-date-input,
+  .dashboard-refresh-btn {
+    width: 100%;
   }
 
   .dashboard-kpis,

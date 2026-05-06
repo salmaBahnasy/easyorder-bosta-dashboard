@@ -88,10 +88,52 @@
 .main-layout__content {
   flex: 1;
   overflow: auto;
+  min-width: 0;
 }
 
 @media (max-width: 900px) {
+  .main-layout {
+    flex-direction: column;
+  }
+
   .main-layout__sidebar {
-    width: 210px;
+    width: 100%;
+    padding: 14px 10px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .main-layout__logo-wrap {
+    margin-bottom: 12px;
+  }
+
+  .main-layout__logo {
+    max-width: 90px;
+  }
+
+  .main-layout__nav {
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .main-layout__nav-link {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 14px;
+    padding: 9px 12px;
+  }
+
+  .main-layout__logout {
+    margin-top: 12px;
+    width: auto;
+    align-self: flex-start;
+  }
+
+  .main-layout__content {
+    width: 100%;
   }
 }
