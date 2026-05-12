@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { getExternalProducts } from "../../api/easyOrdersApi";
+import { Link } from "react-router-dom";
+import { getProducts } from "../../api/ordersApi";
 import { colors } from "../../constants/colors";
 import "./ProductsPage.css";
 
@@ -73,22 +74,14 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const hasApiKey = Boolean(import.meta.env.VITE_EASY_ORDERS_API_KEY);
-
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      if (!hasApiKey) {
-        setLoading(false);
-        setError(null);
-        setRaw(null);
-        return;
-      }
       try {
         setLoading(true);
         setError(null);
-        const data = await getExternalProducts({
+        const data = await getProducts({
           page,
           limit,
           search: activeSearch,
@@ -99,7 +92,7 @@ export default function ProductsPage() {
         if (!cancelled) {
           setError(
             e?.response?.data?.message ??
-              "تعذر تحميل المنتجات من Easy Orders (تحققي من المفتاح والشبكة وCORS)."
+              "تعذر تحميل المنتجات. تحققي من تسجيل الدخول والشبكة.",
           );
           setRaw(null);
         }
@@ -112,7 +105,7 @@ export default function ProductsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, activeSearch, hasApiKey]);
+  }, [page, activeSearch]);
 
   function handleSearchSubmit(e) {
     e?.preventDefault?.();
@@ -142,13 +135,9 @@ export default function ProductsPage() {
           <h1>المنتجات</h1>
           <p>إدارة وعرض منتجات المتجر بشكل حديث وسريع.</p>
         </div>
-        <button
-          type="button"
-          className="products-page__add-btn"
-          onClick={() => alert("صفحة إضافة منتج سيتم تنفيذها قريبًا")}
-        >
+        <Link to="/products/create" className="products-page__add-btn">
           + إضافة منتج
-        </button>
+        </Link>
       </section>
 
       <form className="products-page__toolbar" onSubmit={handleSearchSubmit}>
@@ -173,30 +162,19 @@ export default function ProductsPage() {
         ) : null}
       </form>
 
-      {!hasApiKey ? (
-        <div className="products-page__warning">
-          <strong>مفتاح Easy Orders غير مضبوط.</strong> أضيفي في ملف{" "}
-          <code>.env</code>:
-          <pre className="products-page__warning-code">
-            VITE_EASY_ORDERS_API_KEY=your_api_key_here
-          </pre>
-          ثم أعدي تشغيل <code>npm run dev</code>. الترويسة المرسلة:{" "}
-          <code>Api-Key</code>.
-        </div>
-      ) : null}
-
-      {!hasApiKey ? null : loading ? (
+      {loading ? (
         <p className="products-page__state">جاري تحميل المنتجات...</p>
       ) : error ? (
         <p className="products-page__state products-page__state--error">{error}</p>
       ) : products.length === 0 ? (
-        <p className="products-page__state">لا توجد منتجات في الاستجابة.</p>
+        <p className="products-page__state">لا توجد منتجات. يمكنك إضافة منتج جديد.</p>
       ) : (
         <>
           <div className="products-grid">
             {products.map((item, index) => {
-              const id = item?.id ?? item?.sku ?? index;
+              const id = item?.id ?? item?._id ?? item?.sku ?? index;
               const { name, priceLabel, thumbUrl } = getProductDisplayFields(item);
+              const editId = item?.id ?? item?._id;
               return (
                 <article key={String(id)} className="product-card">
                   <div className="product-card__image-wrap">
@@ -213,13 +191,23 @@ export default function ProductsPage() {
                   </div>
 
                   <div className="product-card__actions">
-                    <button
-                      type="button"
-                      className="product-card__action-btn product-card__action-btn--edit"
-                      onClick={() => alert(`تعديل المنتج: ${name}`)}
-                    >
-                      ✏️ تعديل
-                    </button>
+                    {editId != null ? (
+                      <Link
+                        to={`/products/${encodeURIComponent(String(editId))}/edit`}
+                        className="product-card__action-btn product-card__action-btn--edit"
+                      >
+                        ✏️ تعديل
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        className="product-card__action-btn product-card__action-btn--edit"
+                        disabled
+                        title="لا يوجد معرّف للتعديل"
+                      >
+                        ✏️ تعديل
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="product-card__action-btn product-card__action-btn--delete"

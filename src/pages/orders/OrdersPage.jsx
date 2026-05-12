@@ -312,7 +312,7 @@ export default function OrdersPage() {
       </section>
 
     
-      <section className="orders-page__stats">
+      {/* <section className="orders-page__stats">
         <article className="orders-page__stat-card">
           <span>إجمالي الطلبات</span>
           <strong>{summaryStats.total}</strong>
@@ -329,7 +329,7 @@ export default function OrdersPage() {
           <span>لا يرد</span>
           <strong>{summaryStats.noReply}</strong>
         </article>
-      </section>
+      </section> */}
 
       {loading ? (
         <p className="orders-page__loading">جاري تحميل الطلبات...</p>

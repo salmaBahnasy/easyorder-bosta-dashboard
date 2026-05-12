@@ -5,6 +5,29 @@ export function orderRowKey(order, index = 0) {
   return `row-${index}`;
 }
 
+function toDisplayText(value, fallback = "—") {
+  if (value == null || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toDisplayText(item, "")).filter(Boolean).join("، ") || fallback;
+  }
+  if (typeof value === "object") {
+    const preferred =
+      value.name ??
+      value.title ??
+      value.label ??
+      value.sku ??
+      value.code ??
+      value.taager_code ??
+      value.product_id;
+    if (preferred != null && preferred !== "") return String(preferred);
+    return fallback;
+  }
+  return fallback;
+}
+
 /** معرّف للعرض في الجدول */
 export function orderDisplayId(order) {
   const v =
@@ -50,18 +73,18 @@ export function orderAddress(order) {
 export function orderProductBlock(order) {
   if (order["Product Name"]) {
     return {
-      name: order["Product Name"],
-      variant: order["Product Variant"] ?? "",
+      name: toDisplayText(order["Product Name"]),
+      variant: toDisplayText(order["Product Variant"], ""),
     };
   }
   if (order.lineItemsSummary) {
-    return { name: order.lineItemsSummary, variant: "" };
+    return { name: toDisplayText(order.lineItemsSummary), variant: "" };
   }
   const lineItems = order.lineItems;
   if (Array.isArray(lineItems) && lineItems.length > 0) {
     const first = lineItems[0];
-    const name = first.name ?? "—";
-    const variant = first.sku ?? "";
+    const name = toDisplayText(first.name ?? first.product ?? first, "—");
+    const variant = toDisplayText(first.sku ?? first.variant ?? "", "");
     return { name, variant };
   }
   const items = order.cart_items;
@@ -72,7 +95,8 @@ export function orderProductBlock(order) {
       first.product_name ??
       first.title ??
       first.product?.name ??
-      "—";
+      first.product ??
+      first;
     const variant =
       first.variant_name ??
       first.sku ??
@@ -80,7 +104,7 @@ export function orderProductBlock(order) {
       first.product?.variant ??
       first.product?.sku ??
       "";
-    return { name, variant };
+    return { name: toDisplayText(name), variant: toDisplayText(variant, "") };
   }
   return { name: "—", variant: "" };
 }

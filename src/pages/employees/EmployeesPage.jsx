@@ -191,8 +191,8 @@ export default function EmployeesPage() {
             value={form.role}
             onChange={(e) => setField("role", e.target.value)}
           >
-            <option value="junior">junior</option>
-            <option value="senior">senior</option>
+            <option value="senior">تفعيل</option>
+            <option value="junior">غير مفعل</option>
           </select>
         </label>
 

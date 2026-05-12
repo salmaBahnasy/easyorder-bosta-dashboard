@@ -1,14 +1,69 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getZones, updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import { getProducts, getZones, updateOrder, updateOrderStatus } from "../../api/ordersApi";
 import {
   orderAddress,
   orderCustomer,
   orderDisplayId,
+  orderPayment,
   orderPhone,
   orderTotalCost,
 } from "../../utils/orderDisplay";
 import "./OrderPayloadDetailsPage.css";
+
+function normalizeProductList(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.products)) return payload.products;
+  if (payload.data?.data && Array.isArray(payload.data.data)) return payload.data.data;
+  return [];
+}
+
+function sumLineTotals(items) {
+  if (!Array.isArray(items)) return 0;
+  return items.reduce((sum, row) => {
+    const q = Number(row.quantity ?? row.qty ?? 0) || 0;
+    const p = Number(row.price ?? row.unitPrice ?? 0) || 0;
+    return sum + q * p;
+  }, 0);
+}
+
+function cartRowFromOrderItem(item, idx) {
+  const sku = String(
+    item.sku ?? item.skuCode ?? item.product?.sku ?? ""
+  );
+  const name = String(
+    item.name ??
+      item.product_name ??
+      item.title ??
+      item.product?.name ??
+      ""
+  );
+  const variant = String(item.variant ?? item.variant_name ?? item.variant_label ?? "");
+  const quantity = Number(item.quantity ?? item.qty ?? 1) || 1;
+  const price = Number(item.price ?? item.unitPrice ?? 0) || 0;
+  return {
+    key: `line-${idx}-${sku || "sku"}-${price}-${quantity}`,
+    sku,
+    name,
+    variant,
+    quantity,
+    price,
+  };
+}
+
+function formatMoney(value) {
+  const n = Number(value);
+  if (Number.isNaN(n)) return "0";
+  return String(Math.round(n * 100) / 100);
+}
+
+function lineSubtotal(row) {
+  const q = Number(row.quantity) || 0;
+  const p = Number(row.price) || 0;
+  return q * p;
+}
 
 export default function OrderPayloadDetailsPage() {
   const navigate = useNavigate();
@@ -18,11 +73,12 @@ export default function OrderPayloadDetailsPage() {
 
   const [zones, setZones] = useState([]);
   const [zonesLoading, setZonesLoading] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState("");
   const [form, setForm] = useState({
     orderAlias: "",
-    skuCode: "",
-    quantity: 1,
-    price: "",
     firstLine: "",
     cityName: "",
     cityId: "",
@@ -32,8 +88,9 @@ export default function OrderPayloadDetailsPage() {
     allowToOpenPackage: false,
     firstName: "",
     mobile: "",
-    webhookUrl: "http://your-system.com/webhook",
     type: "FORWARD",
+    shipping_cost: "",
+    payment_method: "",
   });
   const [selectedStatus, setSelectedStatus] = useState("");
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -77,6 +134,29 @@ export default function OrderPayloadDetailsPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadCatalog() {
+      try {
+        setCatalogLoading(true);
+        const data = await getProducts({ page: 1, limit: 100 });
+        const list = normalizeProductList(data);
+        if (!cancelled) setCatalogProducts(list);
+      } catch (e) {
+        console.log(e);
+        if (!cancelled) setCatalogProducts([]);
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+
+    loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!order) return;
 
     const sourceItems = Array.isArray(order.lineItems)
@@ -84,32 +164,45 @@ export default function OrderPayloadDetailsPage() {
       : Array.isArray(order.cart_items)
         ? order.cart_items
         : [];
-    const firstItem = sourceItems[0] ?? {};
+
+    setCartItems(sourceItems.map((item, idx) => cartRowFromOrderItem(item, idx)));
+
+    const fromLines = sourceItems.length > 0 ? sumLineTotals(sourceItems) : null;
+    const codFallback =
+      orderTotalCost(order) ?? (fromLines != null && fromLines > 0 ? fromLines : null) ?? 100;
 
     setForm((prev) => ({
       ...prev,
       orderAlias: order.alias ?? order.shortId ?? "sec_order",
-      skuCode:
-        firstItem.sku ??
-        firstItem.skuCode ??
-        firstItem.variant_name ??
-        firstItem.product?.sku ??
-        "product-1",
-      quantity: Number(firstItem.quantity ?? firstItem.qty ?? 1) || 1,
-      price: String(
-        firstItem.price ?? firstItem.unitPrice ?? orderTotalCost(order) ?? "100"
-      ),
       firstLine:
         orderAddress(order) !== "—"
           ? orderAddress(order)
           : "102 street mohamed abd el shafy, alexandria",
       cityName: order.city ?? "",
-      codAmount: String(orderTotalCost(order) ?? "100"),
+      codAmount: String(codFallback),
       note: order.note ?? "deliver note",
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
+      shipping_cost: String(
+        order.shipping_cost ??
+          order.shippingCost ??
+          order.totals?.shipping ??
+          order.totals?.shippingCost ??
+          "",
+      ),
+      payment_method: String(
+        order.payment_method ??
+          order["Payment Method"] ??
+          order.totals?.paymentMethod ??
+          (orderPayment(order) !== "—" ? orderPayment(order) : "COD"),
+      ),
     }));
   }, [order]);
+
+  const itemsSubtotal = useMemo(
+    () => cartItems.reduce((sum, row) => sum + lineSubtotal(row), 0),
+    [cartItems],
+  );
 
   const districts = useMemo(() => {
     const selectedCity = zones.find(
@@ -137,6 +230,61 @@ export default function OrderPayloadDetailsPage() {
 
   function setField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function updateCartRow(rowKey, patch) {
+    setCartItems((prev) =>
+      prev.map((row) => (row.key === rowKey ? { ...row, ...patch } : row)),
+    );
+  }
+
+  function removeCartRow(rowKey) {
+    setCartItems((prev) => prev.filter((row) => row.key !== rowKey));
+  }
+
+  function addSelectedProductToCart() {
+    if (!selectedProductId) return;
+    const product = catalogProducts.find(
+      (p, idx) =>
+        String(p.id ?? p._id ?? p.sku ?? `idx-${idx}`) === selectedProductId,
+    );
+    if (!product) return;
+
+    let rd = product.raw_data;
+    if (typeof rd === "string") {
+      try {
+        rd = JSON.parse(rd);
+      } catch {
+        rd = {};
+      }
+    }
+    rd = rd && typeof rd === "object" && !Array.isArray(rd) ? rd : {};
+
+    const name = String(product.name ?? product.title ?? rd.name ?? rd.title ?? "");
+    const sku = String(
+      product.sku ?? product.taager_code ?? rd.sku ?? product.id ?? product._id ?? "",
+    );
+    const price = Number(product.price ?? rd.price ?? 0) || 0;
+
+    setCartItems((prev) => [
+      ...prev,
+      {
+        key: `add-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        sku,
+        name,
+        quantity: 1,
+        price,
+      },
+    ]);
+    setSelectedProductId("");
+  }
+
+  function applyItemsTotalToCod() {
+    setForm((prev) => {
+      const shipping = Number(prev.shipping_cost) || 0;
+      const suggested = itemsSubtotal + shipping;
+      return { ...prev, codAmount: formatMoney(suggested) };
+    });
   }
 
   function handleBack() {
@@ -344,13 +492,29 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
-    const uiStatusForSave = selectedStatus || mapBackendStatusToUi(initialOrderStatus) || "جديد";
+    const initialStatus =
+      order?.orderStatus ??
+      order?.order_status ??
+      order?.status ??
+      order?.["Order Status"] ??
+      "جديد";
+    const uiStatusForSave = selectedStatus || mapBackendStatusToUi(initialStatus) || "جديد";
     const backendStatus = backendStatusMap[uiStatusForSave] ?? "new";
+    const cartPayload = cartItems.map(({ sku, name, quantity, price }) => ({
+      sku,
+      skuCode: sku,
+      product_name: name,
+      quantity: Number(quantity) || 1,
+      price: Number(price) || 0,
+    }));
     const payload = {
       full_name: form.firstName,
       phone: form.mobile,
       cityName: form.cityName,
       status: backendStatus,
+      cart_items: cartPayload,
+      shipping_cost: Number(form.shipping_cost) || 0,
+      payment_method: form.payment_method,
     };
 
     try {
@@ -365,6 +529,49 @@ export default function OrderPayloadDetailsPage() {
       setSavingOrder(false);
     }
   }
+
+  const initialOrderStatus =
+    order?.orderStatus ??
+    order?.order_status ??
+    order?.status ??
+    order?.["Order Status"] ??
+    "جديد";
+  const currentOrderStatus = selectedStatus || mapBackendStatusToUi(initialOrderStatus);
+
+  const backendStatusHistory = useMemo(() => {
+    if (!order) return [];
+    const source =
+      (Array.isArray(order.statusHistory) && order.statusHistory) ||
+      (Array.isArray(order.status_history) && order.status_history) ||
+      (Array.isArray(order.timeline?.statusChanges) && order.timeline.statusChanges) ||
+      (Array.isArray(order.timeline?.history) && order.timeline.history) ||
+      (Array.isArray(order.history) && order.history) ||
+      [];
+    return source.map(normalizeHistoryItem).filter(Boolean);
+  }, [order]);
+
+  const statusHistory = useMemo(() => {
+    if (!order) return [];
+    const merged = [...localStatusHistory, ...backendStatusHistory];
+    if (merged.length > 0) return merged;
+    return [
+      {
+        status: currentOrderStatus,
+        user:
+          order.updatedByName ??
+          order.updated_by_name ??
+          order.createdByName ??
+          order.created_by_name ??
+          "غير معروف",
+        timestamp: order.updated_at ?? order.created_at ?? order.date ?? null,
+      },
+    ];
+  }, [backendStatusHistory, currentOrderStatus, localStatusHistory, order]);
+
+  const lastUpdateBy = order ? statusHistory[0]?.user ?? "غير معروف" : "غير معروف";
+
+  const shippingNum = Number(form.shipping_cost) || 0;
+  const grandTotalSuggested = itemsSubtotal + shippingNum;
 
   if (!order) {
     return (
@@ -381,44 +588,6 @@ export default function OrderPayloadDetailsPage() {
     );
   }
 
-  const payloadPreview = {
-    orderAlias: form.orderAlias,
-    items: [
-      {
-        skuCode: form.skuCode,
-        quantity: Number(form.quantity) || 1,
-        price: Number(form.price) || 0,
-      },
-    ],
-    shippingAddress: {
-      firstLine: form.firstLine,
-      cityName: form.cityName,
-      cityId: form.cityId,
-      districtId: form.districtId,
-    },
-    shipment: {
-      codAmount: form.codAmount,
-      note: form.note,
-      allowToOpenPackage: form.allowToOpenPackage,
-    },
-    customer: {
-      firstName: form.firstName,
-      mobile: form.mobile,
-    },
-    externalPlatform: {
-      platform: "custom_api",
-      webhookUrl: form.webhookUrl,
-    },
-    type: form.type,
-  };
-
-  const initialOrderStatus =
-    order?.orderStatus ??
-    order?.order_status ??
-    order?.status ??
-    order?.["Order Status"] ??
-    "جديد";
-  const currentOrderStatus = selectedStatus || mapBackendStatusToUi(initialOrderStatus);
   const statusColorMap = {
     لاغي: "#e74c3c",
     "لا يرد": "#f39c12",
@@ -429,36 +598,7 @@ export default function OrderPayloadDetailsPage() {
     جديد: "#7f8c8d",
   };
   const statusBadgeColor = statusColorMap[currentOrderStatus] ?? "#7f8c8d";
-  const summaryTotal = form.codAmount || orderTotalCost(order) || form.price || "0";
-  const backendStatusHistory = useMemo(() => {
-    const source =
-      (Array.isArray(order?.statusHistory) && order.statusHistory) ||
-      (Array.isArray(order?.status_history) && order.status_history) ||
-      (Array.isArray(order?.timeline?.statusChanges) && order.timeline.statusChanges) ||
-      (Array.isArray(order?.timeline?.history) && order.timeline.history) ||
-      (Array.isArray(order?.history) && order.history) ||
-      [];
-    return source.map(normalizeHistoryItem).filter(Boolean);
-  }, [order]);
-
-  const statusHistory = useMemo(() => {
-    const merged = [...localStatusHistory, ...backendStatusHistory];
-    if (merged.length > 0) return merged;
-    return [
-      {
-        status: currentOrderStatus,
-        user:
-          order?.updatedByName ??
-          order?.updated_by_name ??
-          order?.createdByName ??
-          order?.created_by_name ??
-          "غير معروف",
-        timestamp: order?.updated_at ?? order?.created_at ?? order?.date ?? null,
-      },
-    ];
-  }, [backendStatusHistory, currentOrderStatus, localStatusHistory, order]);
-
-  const lastUpdateBy = statusHistory[0]?.user ?? "غير معروف";
+  const summaryCod = form.codAmount || String(orderTotalCost(order) ?? "0");
 
   return (
     <div className="order-details-page">
@@ -482,40 +622,146 @@ export default function OrderPayloadDetailsPage() {
       <div className="order-details-page__layout">
         <div>
           <section className="order-details-page__card">
+            <h3>عناصر السلة</h3>
+            <div className="order-details-page__cart-toolbar">
+              <select
+                className="order-details-page__input order-details-page__input--grow"
+                value={selectedProductId}
+                onChange={(e) => setSelectedProductId(e.target.value)}
+                disabled={catalogLoading}
+              >
+                <option value="">
+                  {catalogLoading ? "جاري تحميل المنتجات..." : "اختر منتجاً لإضافته للطلب"}
+                </option>
+                {catalogProducts.map((p, idx) => {
+                  const optId = String(p.id ?? p._id ?? p.sku ?? `idx-${idx}`);
+                  const label = `${p.name ?? p.title ?? optId} (${p.sku ?? "—"})`;
+                  return (
+                    <option key={optId} value={optId}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+              <button
+                type="button"
+                className="order-details-page__btn order-details-page__btn--outline"
+                onClick={addSelectedProductToCart}
+                disabled={!selectedProductId || catalogLoading}
+              >
+                إضافة للطلب
+              </button>
+            </div>
+            {cartItems.length === 0 ? (
+              <p className="order-details-page__cart-empty">لا توجد عناصر. أضيفي منتجات من القائمة.</p>
+            ) : (
+              <div className="order-details-page__cart-table-wrap">
+                <table className="order-details-page__cart-table">
+                  <thead>
+                    <tr>
+                      <th>المنتج</th>
+                      <th>SKU</th>
+                      <th>الكمية</th>
+                      <th>سعر الوحدة</th>
+                      <th>الإجمالي</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cartItems.map((row) => (
+                      <tr key={row.key}>
+                        <td>
+                          <input
+                            className="order-details-page__input order-details-page__input--table"
+                            value={row.name}
+                            onChange={(e) => updateCartRow(row.key, { name: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="order-details-page__input order-details-page__input--table"
+                            value={row.sku}
+                            onChange={(e) => updateCartRow(row.key, { sku: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="order-details-page__input order-details-page__input--table"
+                            type="number"
+                            min={1}
+                            value={row.quantity}
+                            onChange={(e) =>
+                              updateCartRow(row.key, {
+                                quantity: Math.max(1, Number(e.target.value) || 1),
+                              })
+                            }
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="order-details-page__input order-details-page__input--table"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={row.price}
+                            onChange={(e) =>
+                              updateCartRow(row.key, { price: Number(e.target.value) || 0 })
+                            }
+                          />
+                        </td>
+                        <td>{formatMoney(lineSubtotal(row))} ج</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="order-details-page__btn order-details-page__btn--outline order-details-page__btn--small"
+                            onClick={() => removeCartRow(row.key)}
+                          >
+                            حذف
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="order-details-page__cart-subtotal">
+              مجموع المنتجات: <strong>{formatMoney(itemsSubtotal)} ج</strong>
+              {" · "}
+              مع الشحن: <strong>{formatMoney(grandTotalSuggested)} ج</strong>
+            </p>
+          </section>
+
+          <section className="order-details-page__card">
             <h3>بيانات الطلب</h3>
             <div className="order-details-page__fields">
-              <label className="order-details-page__field">
-                كود المنتج (SKU)
-                <input
-                  className="order-details-page__input"
-                  value={form.skuCode}
-                  onChange={(e) => setField("skuCode", e.target.value)}
-                />
-              </label>
-              <label className="order-details-page__field">
-                الكمية
-                <input
-                  className="order-details-page__input"
-                  type="number"
-                  value={form.quantity}
-                  onChange={(e) => setField("quantity", e.target.value)}
-                />
-              </label>
-              <label className="order-details-page__field">
-                السعر
-                <input
-                  className="order-details-page__input"
-                  type="number"
-                  value={form.price}
-                  onChange={(e) => setField("price", e.target.value)}
-                />
-              </label>
               <label className="order-details-page__field">
                 مبلغ التحصيل (COD)
                 <input
                   className="order-details-page__input"
                   value={form.codAmount}
                   onChange={(e) => setField("codAmount", e.target.value)}
+                />
+              </label>
+             
+              <label className="order-details-page__field">
+                تكلفة الشحن (shipping_cost)
+                <input
+                  className="order-details-page__input"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.shipping_cost}
+                  onChange={(e) => setField("shipping_cost", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field">
+                طريقة الدفع (payment_method)
+                <input
+                  className="order-details-page__input"
+                  value={form.payment_method}
+                  onChange={(e) => setField("payment_method", e.target.value)}
+                  placeholder="مثال: COD، prepaid، card"
                 />
               </label>
               <label className="order-details-page__field order-details-page__field--full">
@@ -576,8 +822,9 @@ export default function OrderPayloadDetailsPage() {
                     setField("allowToOpenPackage", e.target.value === "true")
                   }
                 >
-                  <option value="false">false</option>
                   <option value="true">true</option>
+                  <option value="false">false</option>
+
                 </select>
               </label>
               <label className="order-details-page__field">
@@ -608,32 +855,7 @@ export default function OrderPayloadDetailsPage() {
           </section>
 
           <section className="order-details-page__card">
-            <h3>تغيير الحالة</h3>
-            <div className="order-details-page__status-actions">
-              {statusButtons.map((status) => (
-                <button
-                  key={status.key}
-                  type="button"
-                  onClick={() => handleStatusClick(status.label)}
-                  disabled={statusUpdating}
-                  className="order-details-page__pill"
-                  style={{ background: status.bg, opacity: statusUpdating ? 0.7 : 1 }}
-                >
-                  {status.label}
-                </button>
-              ))}
-
-              <button
-                type="button"
-                onClick={handleConfirmOnly}
-                disabled={statusUpdating}
-                className="order-details-page__pill"
-                style={{ background: "#16a085", opacity: statusUpdating ? 0.7 : 1 }}
-              >
-                تم التأكيد
-              </button>
-            </div>
-
+  
             {selectedStatus && (
               <p className="order-details-page__status-note">
                 الحالة الحالية: <strong>{selectedStatus}</strong>
@@ -655,7 +877,7 @@ export default function OrderPayloadDetailsPage() {
           </section>
         </div>
 
-        <aside className="order-details-page__card">
+        <aside className="order-details-page__card order-details-page__card--summary">
           <h3>ملخص الطلب</h3>
           <div className="order-details-page__summary-list">
             <div className="order-details-page__summary-row">
@@ -667,32 +889,69 @@ export default function OrderPayloadDetailsPage() {
               <strong>{form.mobile || "—"}</strong>
             </div>
             <div className="order-details-page__summary-row">
-              <span>SKU</span>
-              <strong>{form.skuCode || "—"}</strong>
+              <span>عدد بنود السلة</span>
+              <strong>{cartItems.length}</strong>
             </div>
             <div className="order-details-page__summary-row">
-              <span>الكمية</span>
-              <strong>{form.quantity || 0}</strong>
+              <span>مجموع المنتجات</span>
+              <strong>{formatMoney(itemsSubtotal)} ج</strong>
             </div>
             <div className="order-details-page__summary-row">
-              <span>الإجمالي</span>
-              <strong>{summaryTotal} ج</strong>
+              <span>تكلفة الشحن</span>
+              <strong>{formatMoney(shippingNum)} ج</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>طريقة الدفع</span>
+              <strong>{form.payment_method || "—"}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>منتجات + شحن</span>
+              <strong>{formatMoney(grandTotalSuggested)} ج</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>مبلغ التحصيل (COD)</span>
+              <strong>{summaryCod} ج</strong>
             </div>
           </div>
         </aside>
       </div>
+      {/* <h3>تغيير الحالة</h3> */}
+      <section className="order-details-page__actions-bar">
+        <div className="order-details-page__status-actions">
+          {statusButtons.map((status) => (
+            <button
+              key={status.key}
+              type="button"
+              onClick={() => handleStatusClick(status.label)}
+              disabled={statusUpdating}
+              className="order-details-page__pill"
+              style={{ background: status.bg, opacity: statusUpdating ? 0.7 : 1 }}
+            >
+              {status.label}
+            </button>
+          ))}
 
-      <div className="order-details-page__footer">
-        <button
-          type="button"
-          onClick={handleSaveOrderChanges}
-          disabled={savingOrder}
-          className="order-details-page__btn order-details-page__btn--primary"
-        >
-          {savingOrder ? "جاري الحفظ..." : "حفظ تعديلات الطلب"}
-        </button>
-      </div>
-
+          <button
+            type="button"
+            onClick={handleConfirmOnly}
+            disabled={statusUpdating}
+            className="order-details-page__pill"
+            style={{ background: "#16a085", opacity: statusUpdating ? 0.7 : 1 }}
+          >
+            تم التأكيد
+          </button>
+        </div>
+        <div className="order-details-page__footer order-details-page__footer--bar">
+          <button
+            type="button"
+            onClick={handleSaveOrderChanges}
+            disabled={savingOrder}
+            className="order-details-page__btn order-details-page__btn--primary"
+          >
+            {savingOrder ? "جاري الحفظ..." : "حفظ تعديلات الطلب"}
+          </button>
+        </div>
+      </section>
       {isConfirmModalOpen && (
         <div
           style={{

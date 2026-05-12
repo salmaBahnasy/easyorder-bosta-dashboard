@@ -33,6 +33,11 @@
   font-family: inherit;
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .products-page__toolbar {
@@ -164,6 +169,13 @@
   padding: 7px 8px;
   font-family: inherit;
   cursor: pointer;
+  text-align: center;
+  font-size: inherit;
+}
+
+a.product-card__action-btn {
+  text-decoration: none;
+  color: inherit;
 }
 
 .product-card__action-btn--edit {
