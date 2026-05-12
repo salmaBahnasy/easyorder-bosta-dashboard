@@ -86,9 +86,9 @@
 }
 .orders-page__filters-card {
   margin-bottom: 10px;
-  background: #fff;  
+  background: #fff;
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 10px;
   align-items: end;
 }

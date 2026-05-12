@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getOrderAuditFields } from "../utils/orderAudit";
 
 const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://127.0.0.1:5050";
 
@@ -50,24 +51,74 @@ apiClient.interceptors.response.use(
   },
 );
 
+function normalizeOrderQueryDate(value, endOfDay) {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim();
+  if (!s) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return endOfDay ? `${s}T23:59:59.999Z` : `${s}T00:00:00.000Z`;
+  }
+  return s;
+}
+
+/**
+ * Maps UI employee selection to `employee_id` / `employeeId` query value:
+ * backend accepts either the employee UUID or their email in that single param.
+ */
+export function resolveEmployeeOrderFilterParams(employees, selectedEmployeeId) {
+  const id = String(selectedEmployeeId ?? "").trim();
+  if (!id) return {};
+  const emp = Array.isArray(employees)
+    ? employees.find(
+        (e) => String(e?.id ?? e?._id ?? e?.employeeId ?? "").trim() === id,
+      )
+    : null;
+  const email = String(emp?.email ?? emp?.user_email ?? emp?.userEmail ?? "").trim();
+  return { employee_id: email || id };
+}
+
 export async function getOrders({
   page = 1,
   limit = 20,
   status,
+  employee_id,
   employeeId,
+  phone,
   from,
   to,
+  order_source,
+  order_type,
+  shipping_status,
+  product_id,
+  productId,
+  product_sku,
+  productSku,
 } = {}) {
-  const response = await apiClient.get("/api/orders", {
-    params: {
-      page,
-      limit,
-      status,
-      employeeId,
-      from,
-      to,
-    },
-  });
+  const employee = employee_id ?? employeeId;
+  const product = product_id ?? productId;
+  const sku = product_sku ?? productSku;
+  const params = {
+    page,
+    limit,
+    status,
+    employee_id: employee,
+    phone,
+    from: normalizeOrderQueryDate(from, false),
+    to: normalizeOrderQueryDate(to, true),
+    order_source,
+    order_type,
+    shipping_status,
+    product_id: product,
+    product_sku: sku,
+  };
+
+  const cleaned = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+
+  const response = await apiClient.get("/api/orders", { params: cleaned });
 
   return response.data;
 }
@@ -78,7 +129,8 @@ export async function getOrderDetails(orderId) {
 }
 
 export async function createOrder(payload) {
-  const response = await apiClient.post("/api/orders", payload);
+  const body = { ...payload, ...getOrderAuditFields() };
+  const response = await apiClient.post("/api/orders", body);
   return response.data;
 }
 
@@ -90,14 +142,14 @@ export async function getZones() {
 }
 
 export async function updateOrderStatus(orderId, status) {
-  const response = await apiClient.patch(`/api/orders/${orderId}/status`, {
-    status,
-  });
+  const body = { status, ...getOrderAuditFields() };
+  const response = await apiClient.patch(`/api/orders/${orderId}/status`, body);
   return response.data;
 }
 
 export async function updateOrder(orderId, payload) {
-  const response = await apiClient.patch(`/api/orders/${orderId}`, payload);
+  const body = { ...payload, ...getOrderAuditFields() };
+  const response = await apiClient.patch(`/api/orders/${orderId}`, body);
   return response.data;
 }
 

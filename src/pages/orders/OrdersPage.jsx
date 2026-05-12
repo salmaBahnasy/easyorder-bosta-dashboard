@@ -1,9 +1,61 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getEmployees, getOrders } from "../../api/ordersApi";
+import {
+  getEmployees,
+  getOrders,
+  getProducts,
+  resolveEmployeeOrderFilterParams,
+} from "../../api/ordersApi";
 import OrdersTable from "../../components/OrdersTable";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
 import "./OrdersPage.css";
+
+function normalizeProductList(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.products)) return payload.products;
+  if (payload.data?.data && Array.isArray(payload.data.data)) return payload.data.data;
+  return [];
+}
+
+function getRawDataFields(item) {
+  let rd = item?.raw_data;
+  if (rd == null) return {};
+  if (typeof rd === "string") {
+    try {
+      rd = JSON.parse(rd);
+    } catch {
+      return {};
+    }
+  }
+  return rd && typeof rd === "object" && !Array.isArray(rd) ? rd : {};
+}
+
+/** معرّف يُرسل لـ product_id (يطابق البحث داخل raw_data في الـ API) */
+function getProductFilterId(item) {
+  const rd = getRawDataFields(item);
+  const candidates = [
+    item?.id,
+    item?._id,
+    item?.product_id,
+    item?.productId,
+    rd.id,
+    rd.product_id,
+    rd.productId,
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).trim() !== "") return String(c).trim();
+  }
+  return "";
+}
+
+function getProductListLabel(item) {
+  const rd = getRawDataFields(item);
+  const name = String(item?.name ?? item?.title ?? rd.name ?? rd.title ?? "منتج").trim();
+  const sku = String(item?.sku ?? rd.sku ?? rd.SKU ?? "").trim();
+  return { name: name || "منتج", sku };
+}
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -13,11 +65,18 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
   const [filters, setFilters] = useState({
     status: "",
     employee: "",
+    phone: "",
     from: "",
     to: "",
+    order_source: "",
+    order_type: "",
+    shipping_status: "",
+    product_id: "",
   });
   const navigate = useNavigate();
   const location = useLocation();
@@ -31,6 +90,28 @@ export default function OrdersPage() {
     { value: "repeater", label: "مكرر" },
     { value: "Confirmed", label: "تم التأكيد" },
     { value: "Shipped", label: "تم الشحن" },
+  ];
+
+  const orderSourceOptions = [
+    { value: "", label: "كل المصادر" },
+    { value: "store", label: "متجر" },
+    { value: "messenger", label: "ماسنجر" },
+    { value: "whatsapp", label: "واتساب" },
+    { value: "lost_order", label: "طلب ضائع" },
+  ];
+
+  const orderTypeOptions = [
+    { value: "", label: "كل الأنواع" },
+    { value: "new", label: "جديد" },
+    { value: "replacement", label: "استبدال" },
+    { value: "return", label: "مرتجع" },
+  ];
+
+  const shippingStatusOptions = [
+    { value: "", label: "كل حالات الشحن" },
+    { value: "in_progress", label: "قيد التنفيذ" },
+    { value: "delivered", label: "تم التسليم" },
+    { value: "failed", label: "فشل" },
   ];
 
   function normalizeStatus(value) {
@@ -97,9 +178,14 @@ export default function OrdersPage() {
         page: pageNumber,
         limit,
         status: nextFilters.status || undefined,
-        employeeId: nextFilters.employee || undefined,
+        ...resolveEmployeeOrderFilterParams(employees, nextFilters.employee),
         from: nextFilters.from || undefined,
         to: nextFilters.to || undefined,
+        order_source: nextFilters.order_source || undefined,
+        order_type: nextFilters.order_type || undefined,
+        shipping_status: nextFilters.shipping_status || undefined,
+        product_id: nextFilters.product_id?.trim() || undefined,
+        phone: nextFilters.phone?.trim() || undefined,
       });
 
       const { list, page, total, totalPages } = parseOrdersResponse(result);
@@ -148,6 +234,50 @@ export default function OrdersPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAllProducts() {
+      const limit = 100;
+      const aggregated = [];
+      try {
+        setProductsLoading(true);
+        let page = 1;
+        while (!cancelled) {
+          const data = await getProducts({ page, limit });
+          const list = normalizeProductList(data);
+          aggregated.push(...list);
+          const totalPages =
+            data?.totalPages ?? data?.pagination?.totalPages ?? null;
+          const done =
+            list.length === 0 ||
+            list.length < limit ||
+            (totalPages != null && page >= totalPages);
+          if (done) break;
+          page += 1;
+          if (page > 200) break;
+        }
+        if (!cancelled) {
+          setProducts(aggregated);
+        }
+      } catch (error) {
+        console.log(error);
+        if (!cancelled) {
+          setProducts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setProductsLoading(false);
+        }
+      }
+    }
+
+    loadAllProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function handleFilterChange(name, value) {
     setFilters((prev) => ({
       ...prev,
@@ -160,7 +290,17 @@ export default function OrdersPage() {
   }
 
   function clearFilters() {
-    const clearedFilters = { status: "", employee: "", from: "", to: "" };
+    const clearedFilters = {
+      status: "",
+      employee: "",
+      phone: "",
+      from: "",
+      to: "",
+      order_source: "",
+      order_type: "",
+      shipping_status: "",
+      product_id: "",
+    };
     setFilters(clearedFilters);
     fetchOrders(1, clearedFilters);
   }
@@ -187,9 +327,26 @@ export default function OrdersPage() {
     return Array.from(dedup.values()).sort((a, b) => a.name.localeCompare(b.name, "ar"));
   }, [employees]);
 
+  const productOptions = useMemo(() => {
+    const seen = new Set();
+    const rows = [];
+    for (const item of products) {
+      const id = getProductFilterId(item);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const { name, sku } = getProductListLabel(item);
+      const label = sku ? `${name} — ${sku}` : name;
+      rows.push({ id, label });
+    }
+    rows.sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    return rows;
+  }, [products]);
+
   const filteredOrders = useMemo(() => orders, [orders]);
 
-  const hasLocalFilters = Boolean(filters.status || filters.employee);
+  const hasLocalFilters = Boolean(
+    filters.status || filters.employee || filters.phone?.trim(),
+  );
 
   const summaryStats = useMemo(() => {
     const normalized = filteredOrders.map((order) => normalizeStatus(getOrderStatus(order)));
@@ -272,6 +429,19 @@ export default function OrdersPage() {
         </label>
 
         <label className="orders-page__field">
+          تليفون العميل
+          <input
+            className="orders-page__input"
+            type="tel"
+            inputMode="tel"
+            autoComplete="off"
+            placeholder="مثال: 01554942702"
+            value={filters.phone}
+            onChange={(e) => handleFilterChange("phone", e.target.value)}
+          />
+        </label>
+
+        <label className="orders-page__field">
           من تاريخ
           <input
             className="orders-page__input"
@@ -289,6 +459,70 @@ export default function OrdersPage() {
             value={filters.to}
             onChange={(e) => handleFilterChange("to", e.target.value)}
           />
+        </label>
+
+        <label className="orders-page__field">
+          مصدر الطلب
+          <select
+            className="orders-page__input"
+            value={filters.order_source}
+            onChange={(e) => handleFilterChange("order_source", e.target.value)}
+          >
+            {orderSourceOptions.map((option) => (
+              <option key={option.value || "all-sources"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          نوع الطلب
+          <select
+            className="orders-page__input"
+            value={filters.order_type}
+            onChange={(e) => handleFilterChange("order_type", e.target.value)}
+          >
+            {orderTypeOptions.map((option) => (
+              <option key={option.value || "all-types"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          حالة الشحن
+          <select
+            className="orders-page__input"
+            value={filters.shipping_status}
+            onChange={(e) => handleFilterChange("shipping_status", e.target.value)}
+          >
+            {shippingStatusOptions.map((option) => (
+              <option key={option.value || "all-shipping"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          المنتج
+          <select
+            className="orders-page__input"
+            value={filters.product_id}
+            onChange={(e) => handleFilterChange("product_id", e.target.value)}
+            disabled={productsLoading}
+          >
+            <option value="">
+              {productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"}
+            </option>
+            {productOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
         </label>
         </section>
         <div className="orders-page__filter-actions">
@@ -330,11 +564,15 @@ export default function OrdersPage() {
           <strong>{summaryStats.noReply}</strong>
         </article>
       </section> */}
-
+        <article className="orders-page__stat-card">
+          <span>إجمالي الطلبات</span>
+          <strong>{summaryStats.total}</strong>
+        </article>
       {loading ? (
         <p className="orders-page__loading">جاري تحميل الطلبات...</p>
       ) : (
         <>
+        
           <OrdersTable orders={filteredOrders} onViewDetails={handleViewDetails} />
 
           <div className="orders-page__pagination">

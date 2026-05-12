@@ -91,28 +91,11 @@ export default function OrdersTable({ orders, onViewDetails }) {
                 </td>
                 <td className="orders-table__product-cell">
                   <strong>{productName}</strong>
-                  {productVariant ? (
-                    <>
-                      <br />
-                      <small>{productVariant}</small>
-                    </>
-                  ) : null}
                 </td>
-                {/* <td>{orderQuantity(order)}</td> */}
-                {/* <td>{totalVal != null ? `${totalVal} ج` : "—"}</td> */}
-                {/* <td>{orderPayment(order)}</td> */}
                 <td>{formatDateTime(orderDate(order))}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <div className="orders-table__actions">
-                    <button
-                      onClick={() => onViewDetails(order)}
-                      type="button"
-                      className="orders-table__icon-btn"
-                      title="عرض التفاصيل"
-                      aria-label="عرض التفاصيل"
-                    >
-                      👁
-                    </button>
+                   
                     <button
                       onClick={() => onViewDetails(order)}
                       type="button"

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getEmployees, getOrdersStats } from "../../api/ordersApi";
+import { getEmployees, getOrdersStats, resolveEmployeeOrderFilterParams } from "../../api/ordersApi";
 import { colors } from "../../constants/colors";
 import ChartCard from "../../components/dashboard/ChartCard";
 import LatestOrdersTable from "../../components/dashboard/LatestOrdersTable";
@@ -22,9 +22,9 @@ function isoUtcEndOfDay(dateStr) {
   return `${day}T23:59:59.999Z`;
 }
 
-function buildStatsQueryParams({ dateRange, dateFrom, dateTo, employeeId }) {
+function buildStatsQueryParams({ dateRange, dateFrom, dateTo, employeeId, employees }) {
   const params = {};
-  if (employeeId) params.employeeId = employeeId;
+  Object.assign(params, resolveEmployeeOrderFilterParams(employees, employeeId));
 
   if (dateFrom && dateTo) {
     params.from = isoUtcStartOfDay(dateFrom);
@@ -111,6 +111,7 @@ export default function HomePage() {
           dateFrom,
           dateTo,
           employeeId: employeeFilter,
+          employees,
         });
         if (!cancelled) setStats(data);
       } catch (error) {
@@ -124,7 +125,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [dateRange, dateFrom, dateTo, employeeFilter]);
+  }, [dateRange, dateFrom, dateTo, employeeFilter, employees]);
 
   async function handleRefreshStats() {
     try {
@@ -134,6 +135,7 @@ export default function HomePage() {
         dateFrom,
         dateTo,
         employeeId: employeeFilter,
+        employees,
       });
       setStats(data);
     } catch (error) {
