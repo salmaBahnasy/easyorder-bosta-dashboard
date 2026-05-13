@@ -277,6 +277,17 @@
   box-shadow: 0 0 0 3px rgba(91, 111, 182, 0.16);
 }
 
+.order-details-page__input--computed {
+  background: #f3f4f8;
+  color: #36394a;
+  cursor: default;
+}
+
+.order-details-page__input--computed:focus {
+  box-shadow: none;
+  border-color: #d8deec;
+}
+
 .order-details-page__actions-bar {
   display: flex;
   flex-direction: row;

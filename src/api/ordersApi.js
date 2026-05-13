@@ -62,19 +62,12 @@ function normalizeOrderQueryDate(value, endOfDay) {
 }
 
 /**
- * Maps UI employee selection to `employee_id` / `employeeId` query value:
- * backend accepts either the employee UUID or their email in that single param.
+ * Maps UI employee selection to `employee_id` / `employeeId` query value (employee UUID).
  */
-export function resolveEmployeeOrderFilterParams(employees, selectedEmployeeId) {
+export function resolveEmployeeOrderFilterParams(_employees, selectedEmployeeId) {
   const id = String(selectedEmployeeId ?? "").trim();
   if (!id) return {};
-  const emp = Array.isArray(employees)
-    ? employees.find(
-        (e) => String(e?.id ?? e?._id ?? e?.employeeId ?? "").trim() === id,
-      )
-    : null;
-  const email = String(emp?.email ?? emp?.user_email ?? emp?.userEmail ?? "").trim();
-  return { employee_id: email || id };
+  return { employee_id: id };
 }
 
 export async function getOrders({

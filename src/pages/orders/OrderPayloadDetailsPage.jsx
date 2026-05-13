@@ -16,20 +16,10 @@ import {
   orderDisplayId,
   orderPayment,
   orderPhone,
-  orderTotalCost,
 } from "../../utils/orderDisplay";
 import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
 import { normalizeProductListFromApi } from "../../utils/normalizeProductListFromApi";
 import "./OrderPayloadDetailsPage.css";
-
-function sumLineTotals(items) {
-  if (!Array.isArray(items)) return 0;
-  return items.reduce((sum, row) => {
-    const q = Number(row.quantity ?? row.qty ?? 0) || 0;
-    const p = Number(row.price ?? row.unitPrice ?? 0) || 0;
-    return sum + q * p;
-  }, 0);
-}
 
 function cartRowFromOrderItem(item, idx) {
   const sku = String(
@@ -172,7 +162,6 @@ export default function OrderPayloadDetailsPage() {
     cityName: "",
     cityId: "",
     districtId: "",
-    codAmount: "",
     note: "",
     allowToOpenPackage: false,
     firstName: "",
@@ -259,10 +248,6 @@ export default function OrderPayloadDetailsPage() {
 
     setCartItems(sourceItems.map((item, idx) => cartRowFromOrderItem(item, idx)));
 
-    const fromLines = sourceItems.length > 0 ? sumLineTotals(sourceItems) : null;
-    const codFallback =
-      orderTotalCost(order) ?? (fromLines != null && fromLines > 0 ? fromLines : null) ?? 100;
-
     setForm((prev) => ({
       ...prev,
       orderAlias: order.alias ?? order.shortId ?? "sec_order",
@@ -271,7 +256,6 @@ export default function OrderPayloadDetailsPage() {
           ? orderAddress(order)
           : "102 street mohamed abd el shafy, alexandria",
       cityName: order.city ?? "",
-      codAmount: String(codFallback),
       note: order.note ?? "deliver note",
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
@@ -370,14 +354,6 @@ export default function OrderPayloadDetailsPage() {
     if (idx === -1) return;
     const fields = productToCartFields(catalogProducts[idx]);
     updateCartRow(rowKey, { ...fields, catalogOptionId: optionId });
-  }
-
-  function applyItemsTotalToCod() {
-    setForm((prev) => {
-      const shipping = Number(prev.shipping_cost) || 0;
-      const suggested = itemsSubtotal + shipping;
-      return { ...prev, codAmount: formatMoney(suggested) };
-    });
   }
 
   function handleBack() {
@@ -686,6 +662,7 @@ export default function OrderPayloadDetailsPage() {
 
   const shippingNum = Number(form.shipping_cost) || 0;
   const grandTotalSuggested = itemsSubtotal + shippingNum;
+  const collectionTotalDisplay = formatMoney(grandTotalSuggested);
 
   if (!order) {
     return (
@@ -712,7 +689,6 @@ export default function OrderPayloadDetailsPage() {
     جديد: "#7f8c8d",
   };
   const statusBadgeColor = statusColorMap[currentOrderStatus] ?? "#7f8c8d";
-  const summaryCod = form.codAmount || String(orderTotalCost(order) ?? "0");
 
   return (
     <div className="order-details-page">
@@ -929,11 +905,13 @@ export default function OrderPayloadDetailsPage() {
                />
              </label>
              <label className="order-details-page__field">
-               مبلغ التحصيل 
+               مبلغ التحصيل
                <input
-                 className="order-details-page__input"
-                 value={form.codAmount}
-                 onChange={(e) => setField("codAmount", e.target.value)}
+                 className="order-details-page__input order-details-page__input--computed"
+                 readOnly
+                 tabIndex={-1}
+                 title="يُحسب تلقائياً من مجموع المنتجات وتكلفة الشحن"
+                 value={collectionTotalDisplay}
                />
              </label>
              <label className="order-details-page__field">
@@ -1099,8 +1077,8 @@ export default function OrderPayloadDetailsPage() {
             </div>
            
             <div className="order-details-page__summary-row">
-              <span>مبلغ التحصيل (COD)</span>
-              <strong>{summaryCod} ج</strong>
+              <span>مبلغ التحصيل</span>
+              <strong>{collectionTotalDisplay} ج</strong>
             </div>
           </div>
         </aside>
