@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logo } from "../assets/images";
-import { clearAuthStorage } from "../utils/auth";
+import { clearAuthStorage, isStoredUserAdmin } from "../utils/auth";
 import "./MainLayout.css";
 
 export default function MainLayout() {
@@ -55,15 +55,17 @@ export default function MainLayout() {
             <span className="main-layout__icon">🧴</span>
             منتجات
           </NavLink>
-          <NavLink
-            to="/employees"
-            className={({ isActive }) =>
-              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
-            }
-          >
-            <span className="main-layout__icon">👥</span>
-            الموظفين
-          </NavLink>
+          {isStoredUserAdmin() ? (
+            <NavLink
+              to="/employees"
+              className={({ isActive }) =>
+                `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+              }
+            >
+              <span className="main-layout__icon">👥</span>
+              الموظفين
+            </NavLink>
+          ) : null}
         </nav>
         <button type="button" onClick={handleLogout} className="main-layout__logout">
           تسجيل الخروج

@@ -74,6 +74,20 @@
   color: #475569;
 }
 
+.orders-table__status-cell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.orders-table__shipping-beside {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
 .orders-table__actions {
   display: flex;
   gap: 6px;

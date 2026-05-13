@@ -278,9 +278,12 @@
 }
 
 .order-details-page__input--computed {
+  display: flex;
+  align-items: center;
   background: #f3f4f8;
   color: #36394a;
   cursor: default;
+  font-variant-numeric: tabular-nums;
 }
 
 .order-details-page__input--computed:focus {

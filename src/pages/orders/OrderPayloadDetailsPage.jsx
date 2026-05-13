@@ -62,6 +62,17 @@ function formatMoney(value) {
   return String(Math.round(n * 100) / 100);
 }
 
+/** Parses money from controlled inputs (handles commas, spaces, partial input). */
+function parseNonNegativeMoney(raw) {
+  const s = String(raw ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/,/g, ".");
+  if (s === "" || s === "-" || s === "." || s === "-.") return 0;
+  const n = parseFloat(s);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
 const ORDER_STATUS_UI_OPTIONS = [
   { value: "جديد", label: "قيد المراجعة" },
   { value: "لاغي", label: "لاغي" },
@@ -283,6 +294,21 @@ export default function OrderPayloadDetailsPage() {
   const itemsSubtotal = useMemo(
     () => cartItems.reduce((sum, row) => sum + lineSubtotal(row), 0),
     [cartItems],
+  );
+
+  const shippingNum = useMemo(
+    () => parseNonNegativeMoney(form.shipping_cost),
+    [form.shipping_cost],
+  );
+
+  const grandTotalSuggested = useMemo(
+    () => itemsSubtotal + shippingNum,
+    [itemsSubtotal, shippingNum],
+  );
+
+  const collectionTotalDisplay = useMemo(
+    () => formatMoney(grandTotalSuggested),
+    [grandTotalSuggested],
   );
 
   const districts = useMemo(() => {
@@ -599,7 +625,7 @@ export default function OrderPayloadDetailsPage() {
       cityName: form.cityName,
       status: backendStatus,
       cart_items: cartPayload,
-      shipping_cost: Number(form.shipping_cost) || 0,
+      shipping_cost: parseNonNegativeMoney(form.shipping_cost),
       payment_method: form.payment_method,
       order_source: form.order_source,
       order_type: form.order_type,
@@ -659,10 +685,6 @@ export default function OrderPayloadDetailsPage() {
         return resolveActorDisplayName(order) ?? "غير معروف";
       })()
     : "غير معروف";
-
-  const shippingNum = Number(form.shipping_cost) || 0;
-  const grandTotalSuggested = itemsSubtotal + shippingNum;
-  const collectionTotalDisplay = formatMoney(grandTotalSuggested);
 
   if (!order) {
     return (
@@ -906,13 +928,15 @@ export default function OrderPayloadDetailsPage() {
              </label>
              <label className="order-details-page__field">
                مبلغ التحصيل
-               <input
+               <div
                  className="order-details-page__input order-details-page__input--computed"
-                 readOnly
-                 tabIndex={-1}
+                 role="status"
+                 aria-live="polite"
+                 aria-atomic="true"
                  title="يُحسب تلقائياً من مجموع المنتجات وتكلفة الشحن"
-                 value={collectionTotalDisplay}
-               />
+               >
+                 {collectionTotalDisplay}
+               </div>
              </label>
              <label className="order-details-page__field">
                طريقة الدفع 

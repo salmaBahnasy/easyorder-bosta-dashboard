@@ -5,6 +5,7 @@ import {
   orderPhone,
   orderProductBlock,
   orderRowKey,
+  orderShippingStatus,
   orderStatus,
 } from "../utils/orderDisplay";
 import "./OrdersTable.css";
@@ -17,10 +18,29 @@ function normalizeStatus(value) {
     .replace(/\s+/g, " ");
 }
 
+function isShippedOrderStatus(order) {
+  const raw = orderStatus(order);
+  const n = normalizeStatus(raw);
+  if (n === "shipped") return true;
+  return String(raw ?? "").trim() === "تم الشحن";
+}
+
+function shippingStatusDisplayLabel(code) {
+  if (code == null || code === "") return null;
+  const key = String(code).trim().toLowerCase();
+  const map = {
+    in_progress: "قيد التنفيذ",
+    delivered: "تم التسليم",
+    failed: "فشل",
+  };
+  return map[key] ?? String(code);
+}
+
 function getStatusPresentation(value) {
   const normalized = normalizeStatus(value);
   const map = {
-    new: { label: "جديد", tone: "gray" },
+    new: { label: "قيد المراجعة", tone: "gray" },
+    جديد: { label: "قيد المراجعة", tone: "gray" },
     canceled: { label: "لاغي", tone: "red" },
     cancelled: { label: "لاغي", tone: "red" },
     "no replay": { label: "لا يرد", tone: "yellow" },
@@ -74,6 +94,9 @@ export default function OrdersTable({ orders, onViewDetails }) {
             const { name: productName, variant: productVariant } =
               orderProductBlock(order);
             const statusView = getStatusPresentation(orderStatus(order));
+            const shipCode = orderShippingStatus(order);
+            const shipLabel = shippingStatusDisplayLabel(shipCode);
+            const showShippingWithStatus = isShippedOrderStatus(order) && shipLabel;
             return (
               <tr
                 key={orderRowKey(order, index)}
@@ -85,9 +108,16 @@ export default function OrdersTable({ orders, onViewDetails }) {
                 <td>{orderCustomer(order)}</td>
                 <td>{orderPhone(order)}</td>
                 <td>
-                  <span className={`orders-table__badge orders-table__badge--${statusView.tone}`}>
-                    {statusView.label}
-                  </span>
+                  <div className="orders-table__status-cell">
+                    <span className={`orders-table__badge orders-table__badge--${statusView.tone}`}>
+                      {statusView.label}
+                    </span>
+                    {showShippingWithStatus ? (
+                      <span className="orders-table__shipping-beside" title="حالة الشحن">
+                        · {shipLabel}
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="orders-table__product-cell">
                   <strong>{productName}</strong>

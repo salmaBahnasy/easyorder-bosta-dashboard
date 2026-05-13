@@ -174,6 +174,29 @@ export function orderStatus(order) {
   );
 }
 
+/** حالة الشحن من الطلب (للعرض مع «تم الشحن»). */
+export function orderShippingStatus(order) {
+  let v =
+    order.shipping_status ??
+    order.shippingStatus ??
+    order["Shipping Status"];
+  if (v != null && String(v).trim() !== "") return String(v).trim();
+
+  let rd = order?.raw_data;
+  if (typeof rd === "string") {
+    try {
+      rd = JSON.parse(rd);
+    } catch {
+      rd = null;
+    }
+  }
+  if (rd && typeof rd === "object") {
+    v = rd.shipping_status ?? rd.shippingStatus;
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return null;
+}
+
 /** للتنقل لصفحة التفاصيل: الـ API عادة يتوقع uuid في `id` */
 export function orderDetailRouteId(order) {
   return order.id ?? order["Order ID"] ?? order.shortId ?? order.short_id;

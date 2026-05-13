@@ -156,6 +156,16 @@ export async function getOrdersStats(params = {}) {
   return response.data;
 }
 
+export async function getOrdersAnalytics(params = {}) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+  const response = await apiClient.get("/api/orders/analytics", { params: clean });
+  return response.data;
+}
+
 export async function getProducts({ page = 1, limit = 50, search } = {}) {
   const params = { page, limit };
   const q = typeof search === "string" ? search.trim() : "";
@@ -192,14 +202,26 @@ export async function getEmployees() {
   return response.data;
 }
 
-export async function createEmployee({ name, email, password, role }) {
+export async function createEmployee({ name, email, password, is_active, employeeRole }) {
+  const privilege =
+    employeeRole != null && String(employeeRole).trim() !== ""
+      ? normalizeEmployeeRoleForApi(employeeRole)
+      : "employee";
+
   const response = await apiClient.post("/api/employees", {
     name,
     email,
     password,
-    role,
+    role: privilege,
+    employeeRole: privilege,
+    is_active: Boolean(is_active),
   });
   return response.data;
+}
+
+function normalizeEmployeeRoleForApi(value) {
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "admin" ? "admin" : "employee";
 }
 
 export async function updateEmployee(employeeId, payload) {

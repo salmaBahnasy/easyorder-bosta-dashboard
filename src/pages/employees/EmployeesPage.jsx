@@ -11,8 +11,59 @@ const initialForm = {
   name: "",
   email: "",
   password: "",
-  role: "junior",
+  is_active: false,
+  employeeRole: "employee",
 };
+
+const EMPLOYEE_ROLE_OPTIONS = [
+  { value: "admin", label: "مسؤول (admin)" },
+  { value: "employee", label: "موظف (employee)" },
+];
+
+function normalizeEmployeeRole(value) {
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "admin" ? "admin" : "employee";
+}
+
+/**
+ * الخادم قد يضع الصلاحية في `role` (admin|employee) أو في employeeRole.
+ * حقل `role` قد يكون أيضاً senior|junior لحسابات قديمة.
+ */
+function getPrivilegeFromEmployee(emp) {
+  const r = String(emp?.role ?? "").trim().toLowerCase();
+  if (r === "admin" || r === "employee") {
+    return normalizeEmployeeRole(r);
+  }
+  return normalizeEmployeeRole(emp?.employeeRole ?? emp?.employee_role);
+}
+
+/** مفعل / غير مفعل — يفضّل `is_active` من الـ API مع دعم سجلات قديمة. */
+function getIsActiveFromEmployee(emp) {
+  if (emp?.is_active === true || emp?.isActive === true) return true;
+  if (emp?.is_active === false || emp?.isActive === false) return false;
+  const jr = String(emp?.jobRole ?? "").trim().toLowerCase();
+  if (jr === "senior") return true;
+  if (jr === "junior") return false;
+  const r = String(emp?.role ?? "").trim().toLowerCase();
+  if (r === "senior") return true;
+  if (r === "junior") return false;
+  return false;
+}
+
+function employeeRoleUiLabel(value) {
+  return normalizeEmployeeRole(value) === "admin" ? "مسؤول" : "موظف";
+}
+
+function buildEmployeeSavePayload(form) {
+  const privilege = normalizeEmployeeRole(form.employeeRole);
+  return {
+    name: form.name,
+    email: form.email,
+    role: privilege,
+    employeeRole: privilege,
+    is_active: Boolean(form.is_active),
+  };
+}
 
 export default function EmployeesPage() {
   const formCardRef = useRef(null);
@@ -54,12 +105,13 @@ export default function EmployeesPage() {
   }
 
   function startEdit(employee) {
-    setEditingId(employee.id);
+    setEditingId(employee.id ?? employee._id);
     setForm({
       name: employee.name ?? "",
       email: employee.email ?? "",
       password: "",
-      role: employee.role ?? "junior",
+      is_active: getIsActiveFromEmployee(employee),
+      employeeRole: getPrivilegeFromEmployee(employee),
     });
   }
 
@@ -93,11 +145,7 @@ export default function EmployeesPage() {
     try {
       setSaving(true);
       if (editingId) {
-        const payload = {
-          name: form.name,
-          email: form.email,
-          role: form.role,
-        };
+        const payload = buildEmployeeSavePayload(form);
         if (form.password.trim()) payload.password = form.password;
         await updateEmployee(editingId, payload);
       } else {
@@ -105,7 +153,8 @@ export default function EmployeesPage() {
           name: form.name,
           email: form.email,
           password: form.password,
-          role: form.role,
+          is_active: form.is_active,
+          employeeRole: form.employeeRole,
         });
       }
       resetForm();
@@ -185,14 +234,29 @@ export default function EmployeesPage() {
         </label>
 
         <label className="employees-page__field">
-          الدور
+          صلاحية الموظف
           <select
             className="employees-page__input"
-            value={form.role}
-            onChange={(e) => setField("role", e.target.value)}
+            value={form.employeeRole}
+            onChange={(e) => setField("employeeRole", e.target.value)}
           >
-            <option value="senior">تفعيل</option>
-            <option value="junior">غير مفعل</option>
+            {EMPLOYEE_ROLE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="employees-page__field">
+          الحالة
+          <select
+            className="employees-page__input"
+            value={form.is_active ? "true" : "false"}
+            onChange={(e) => setField("is_active", e.target.value === "true")}
+          >
+            <option value="true">مفعل</option>
+            <option value="false">غير مفعل</option>
           </select>
         </label>
 
@@ -222,14 +286,14 @@ export default function EmployeesPage() {
                 <tr>
                   <th>الاسم</th>
                   <th>الإيميل</th>
-                  <th>الدور</th>
-                  {/* <th>تاريخ الإنشاء</th> */}
+                  <th>الحالة</th>
+                  <th>الصلاحية</th>
                   <th>إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {employees.map((employee) => (
-                  <tr key={employee.id}>
+                  <tr key={employee.id ?? employee._id}>
                     <td>
                       <div className="employees-page__name-cell">
                         <span className="employees-page__avatar">
@@ -242,12 +306,23 @@ export default function EmployeesPage() {
                     <td>
                       <span
                         className={`employees-page__role-badge ${
-                          employee.role === "senior"
+                          getIsActiveFromEmployee(employee)
                             ? "employees-page__role-badge--senior"
                             : "employees-page__role-badge--junior"
                         }`}
                       >
-                        {employee.role ?? "—"}
+                        {getIsActiveFromEmployee(employee) ? "مفعل" : "غير مفعل"}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={`employees-page__role-badge ${
+                          getPrivilegeFromEmployee(employee) === "admin"
+                            ? "employees-page__role-badge--admin"
+                            : "employees-page__role-badge--employee"
+                        }`}
+                      >
+                        {employeeRoleUiLabel(getPrivilegeFromEmployee(employee))}
                       </span>
                     </td>
                     {/* <td>{employee.created_at ?? "—"}</td> */}
@@ -264,7 +339,7 @@ export default function EmployeesPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDelete(employee.id)}
+                          onClick={() => handleDelete(employee.id ?? employee._id)}
                           className="employees-page__icon-btn employees-page__icon-btn--danger"
                           title="حذف"
                           aria-label="حذف"

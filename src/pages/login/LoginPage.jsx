@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { loginSenior } from "../../api/ordersApi";
-import { isTokenValid } from "../../utils/auth";
+import {
+  isTokenValid,
+  resolvePrivilegeRoleAfterLogin,
+  setStoredEmployeeRole,
+} from "../../utils/auth";
 import { colors } from "../../constants/colors";
 import { logo, rightbg } from "../../assets/images";
 import "./LoginPage.css";
@@ -26,7 +30,8 @@ export default function LoginPage() {
       setLoading(true);
       const result = await loginSenior({ email, password });
       const token = result?.token;
-      const employee = result?.data;
+      const employee =
+        result?.data ?? result?.employee ?? result?.user ?? null;
 
       if (!token || !isTokenValid(token)) {
         setError("لم يتم استلام توكن صالح من الخادم");
@@ -34,6 +39,8 @@ export default function LoginPage() {
       }
 
       localStorage.setItem("easyorder_token", token);
+      const privilegeRole = resolvePrivilegeRoleAfterLogin(employee, token);
+      setStoredEmployeeRole(privilegeRole);
       if (employee) {
         localStorage.setItem("easyorder_user", JSON.stringify(employee));
       }

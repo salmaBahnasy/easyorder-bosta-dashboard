@@ -11,11 +11,18 @@ import OrdersStatsPage from "./pages/OrdersStatsPage";
 import CreateProductPage from "./pages/products/CreateProductPage";
 import EditProductPage from "./pages/products/EditProductPage";
 import ProductsPage from "./pages/products/ProductsPage";
-import { hasValidStoredToken } from "./utils/auth";
+import { hasValidStoredToken, isStoredUserAdmin } from "./utils/auth";
 
 function RequireAuth({ children }) {
   if (!hasValidStoredToken()) {
     return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+function RequireAdmin({ children }) {
+  if (!isStoredUserAdmin()) {
+    return <Navigate to="/" replace />;
   }
   return children;
 }
@@ -49,7 +56,7 @@ function App() {
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/orders/create" element={<CreateOrderPage />} />
         <Route path="/orders/stats" element={<OrdersStatsPage />} />
-        <Route path="/employees" element={<EmployeesPage />} />
+        <Route path="/employees" element={<RequireAdmin><EmployeesPage /></RequireAdmin>} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/create" element={<CreateProductPage />} />
         <Route path="/products/:productId/edit" element={<EditProductPage />} />

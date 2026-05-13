@@ -8,54 +8,13 @@ import {
 } from "../../api/ordersApi";
 import OrdersTable from "../../components/OrdersTable";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
+import { getSelfEmployeeRowsForFilter, isStoredUserAdmin } from "../../utils/auth";
+import {
+  getProductFilterId,
+  getProductListLabel,
+  normalizeProductList,
+} from "../../utils/ordersFilterProductOptions";
 import "./OrdersPage.css";
-
-function normalizeProductList(payload) {
-  if (!payload) return [];
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload.data)) return payload.data;
-  if (Array.isArray(payload.products)) return payload.products;
-  if (payload.data?.data && Array.isArray(payload.data.data)) return payload.data.data;
-  return [];
-}
-
-function getRawDataFields(item) {
-  let rd = item?.raw_data;
-  if (rd == null) return {};
-  if (typeof rd === "string") {
-    try {
-      rd = JSON.parse(rd);
-    } catch {
-      return {};
-    }
-  }
-  return rd && typeof rd === "object" && !Array.isArray(rd) ? rd : {};
-}
-
-/** معرّف يُرسل لـ product_id (يطابق البحث داخل raw_data في الـ API) */
-function getProductFilterId(item) {
-  const rd = getRawDataFields(item);
-  const candidates = [
-    item?.id,
-    item?._id,
-    item?.product_id,
-    item?.productId,
-    rd.id,
-    rd.product_id,
-    rd.productId,
-  ];
-  for (const c of candidates) {
-    if (c != null && String(c).trim() !== "") return String(c).trim();
-  }
-  return "";
-}
-
-function getProductListLabel(item) {
-  const rd = getRawDataFields(item);
-  const name = String(item?.name ?? item?.title ?? rd.name ?? rd.title ?? "منتج").trim();
-  const sku = String(item?.sku ?? rd.sku ?? rd.SKU ?? "").trim();
-  return { name: name || "منتج", sku };
-}
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -83,7 +42,7 @@ export default function OrdersPage() {
 
   const statusOptions = [
     { value: "", label: "كل الحالات" },
-    { value: "new", label: "جديد" },
+    { value: "new", label: "قيد المراجعة" },
     { value: "canceled", label: "لاغي" },
     { value: "no_replay", label: "لا يرد" },
     { value: "follow up", label: "متابعة" },
@@ -102,7 +61,7 @@ export default function OrdersPage() {
 
   const orderTypeOptions = [
     { value: "", label: "كل الأنواع" },
-    { value: "new", label: "جديد" },
+    { value: "new", label: "أوردر جديد" },
     { value: "replacement", label: "استبدال" },
     { value: "return", label: "مرتجع" },
   ];
@@ -163,7 +122,7 @@ export default function OrdersPage() {
       repeater: ["duplicate", "مكرر"],
       confirmed: ["تم التأكيد"],
       shipped: ["تم الشحن"],
-      new: ["جديد"],
+      new: ["جديد", "قيد المراجعة"],
     };
 
     const selectedAliases = aliases[selected] ?? [];
@@ -174,11 +133,17 @@ export default function OrdersPage() {
     try {
       setLoading(true);
 
+      const selfRow = getSelfEmployeeRowsForFilter()[0];
+      const selfId = selfRow?.id ? String(selfRow.id).trim() : "";
+      const effectiveEmployeeId =
+        (nextFilters.employee && String(nextFilters.employee).trim()) ||
+        (!isStoredUserAdmin() && selfId ? selfId : "");
+
       const result = await getOrders({
         page: pageNumber,
         limit,
         status: nextFilters.status || undefined,
-        ...resolveEmployeeOrderFilterParams(employees, nextFilters.employee),
+        ...resolveEmployeeOrderFilterParams(employees, effectiveEmployeeId),
         from: nextFilters.from || undefined,
         to: nextFilters.to || undefined,
         order_source: nextFilters.order_source || undefined,
@@ -210,6 +175,10 @@ export default function OrdersPage() {
 
     async function loadEmployees() {
       try {
+        if (!isStoredUserAdmin()) {
+          if (!cancelled) setEmployees(getSelfEmployeeRowsForFilter());
+          return;
+        }
         const result = await getEmployees();
         const list = Array.isArray(result?.data)
           ? result.data
