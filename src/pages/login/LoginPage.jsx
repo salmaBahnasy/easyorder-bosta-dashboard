@@ -1,17 +1,26 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { loginSenior } from "../../api/ordersApi";
+import { useNavigate } from "react-router-dom";
+import { loginDashboard } from "../../api/ordersApi";
 import {
+  SELECTED_SYSTEM_STORAGE_KEY,
+  appHref,
   isTokenValid,
   resolvePrivilegeRoleAfterLogin,
+  setSelectedSystem,
   setStoredEmployeeRole,
 } from "../../utils/auth";
 import { colors } from "../../constants/colors";
 import { logo, rightbg } from "../../assets/images";
 import "./LoginPage.css";
 
+function initialLoginSystemTab() {
+  const raw = localStorage.getItem(SELECTED_SYSTEM_STORAGE_KEY);
+  return raw === "salla" ? "salla" : "easyorder";
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [loginSystem, setLoginSystem] = useState(initialLoginSystemTab);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -28,7 +37,7 @@ export default function LoginPage() {
 
     try {
       setLoading(true);
-      const result = await loginSenior({ email, password });
+      const result = await loginDashboard(loginSystem, { email, password });
       const token = result?.token;
       const employee =
         result?.data ?? result?.employee ?? result?.user ?? null;
@@ -38,6 +47,7 @@ export default function LoginPage() {
         return;
       }
 
+      setSelectedSystem(loginSystem);
       localStorage.setItem("easyorder_token", token);
       const privilegeRole = resolvePrivilegeRoleAfterLogin(employee, token);
       setStoredEmployeeRole(privilegeRole);
@@ -45,7 +55,7 @@ export default function LoginPage() {
         localStorage.setItem("easyorder_user", JSON.stringify(employee));
       }
 
-      navigate("/");
+      navigate(appHref("dashboard"), { replace: true });
     } catch (err) {
       console.log(err);
       const msg = err?.response?.data?.message ?? "فشل تسجيل الدخول";
@@ -71,6 +81,33 @@ export default function LoginPage() {
           <h1>مرحبا بعودتك</h1>
           <p>سجل الدخول للوصول إلى حسابك</p>
 
+          <div className="login-page__system-picker" role="tablist" aria-label="اختيار النظام">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={loginSystem === "easyorder"}
+              className={`login-page__system-card ${
+                loginSystem === "easyorder" ? "login-page__system-card--active" : ""
+              }`}
+              onClick={() => setLoginSystem("easyorder")}
+            >
+              <span className="login-page__system-title">EasyOrder</span>
+              <span className="login-page__system-sub">Egypt</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={loginSystem === "salla"}
+              className={`login-page__system-card ${
+                loginSystem === "salla" ? "login-page__system-card--active" : ""
+              }`}
+              onClick={() => setLoginSystem("salla")}
+            >
+              <span className="login-page__system-title">Salla</span>
+              <span className="login-page__system-sub">Saudi Arabia</span>
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="login-page__form">
             <label className="login-page__label">
               البريد الإلكتروني
@@ -94,16 +131,6 @@ export default function LoginPage() {
               />
             </label>
 
-            {/* <div className="login-page__assist-row">
-              <label className="login-page__remember">
-                <input type="checkbox" />
-                تذكرني
-              </label>
-              <Link to="/login" className="login-page__forgot-link">
-                نسيت كلمة المرور؟
-              </Link>
-            </div> */}
-
             {error ? <p className="login-page__error">{error}</p> : null}
 
             <button type="submit" disabled={loading} className="login-page__submit">
@@ -114,8 +141,6 @@ export default function LoginPage() {
             </button>
 
             <div className="login-page__divider">*</div>
-
-          
           </form>
 
           <p className="login-page__security-note">بياناتك محمية وآمنة</p>

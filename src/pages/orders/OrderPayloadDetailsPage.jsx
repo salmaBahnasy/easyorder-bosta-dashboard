@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getProducts, getZones, updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import { appHref } from "../../utils/auth";
 import {
   cartRowSelectValue,
   catalogProductDisplayName,
@@ -159,7 +160,7 @@ function lineSubtotal(row) {
 export default function OrderPayloadDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const returnTo = location.state?.returnTo ?? "/orders";
+  const returnTo = location.state?.returnTo ?? appHref("orders");
   const order = location.state?.order ?? null;
 
   const [zones, setZones] = useState([]);
@@ -367,7 +368,7 @@ export default function OrderPayloadDetailsPage() {
       updateCartRow(rowKey, {
         sku: "",
         name: "",
-        price: 0,
+        price: "",
         catalogProductId: null,
         catalogProductKey: "",
         catalogOptionId: "",
@@ -379,7 +380,7 @@ export default function OrderPayloadDetailsPage() {
     );
     if (idx === -1) return;
     const fields = productToCartFields(catalogProducts[idx]);
-    updateCartRow(rowKey, { ...fields, catalogOptionId: optionId });
+    updateCartRow(rowKey, { ...fields, price: "", catalogOptionId: optionId });
   }
 
   function handleBack() {
@@ -879,12 +880,13 @@ export default function OrderPayloadDetailsPage() {
                             type="number"
                             min={0}
                             step="0.01"
-                            value={row.price}
-                            onChange={(e) =>
+                            value={row.price === "" || row.price == null ? "" : row.price}
+                            onChange={(e) => {
+                              const raw = e.target.value;
                               updateCartRow(row.key, {
-                                price: Number(e.target.value) || 0,
-                              })
-                            }
+                                price: raw === "" ? "" : Number(raw),
+                              });
+                            }}
                           />
                         </td>
                         <td>{formatMoney(lineSubtotal(row))} ج</td>

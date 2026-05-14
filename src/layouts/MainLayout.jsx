@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logo } from "../assets/images";
-import { clearAuthStorage, isStoredUserAdmin } from "../utils/auth";
+import { appHref, clearAuthStorage, isStoredUserAdmin } from "../utils/auth";
 import "./MainLayout.css";
 
 export default function MainLayout() {
@@ -19,7 +19,7 @@ export default function MainLayout() {
         </div>
         <nav className="main-layout__nav">
           <NavLink
-            to="/"
+            to={appHref("dashboard")}
             end
             className={({ isActive }) =>
               `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
@@ -29,7 +29,7 @@ export default function MainLayout() {
             الرئيسية
           </NavLink>
           <NavLink
-            to="/orders"
+            to={appHref("orders")}
             className={({ isActive }) =>
               `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
             }
@@ -37,17 +37,17 @@ export default function MainLayout() {
             <span className="main-layout__icon">📦</span>
             الطلبات
           </NavLink>
-          <NavLink
-            to="/orders/stats"
+          {/* <NavLink
+            to={appHref("orders/stats")}
             className={({ isActive }) =>
               `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
             }
           >
             <span className="main-layout__icon">📊</span>
             إحصائيات الطلبات
-          </NavLink>
+          </NavLink> */}
           <NavLink
-            to="/products"
+            to={appHref("products")}
             className={({ isActive }) =>
               `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
             }
@@ -57,7 +57,7 @@ export default function MainLayout() {
           </NavLink>
           {isStoredUserAdmin() ? (
             <NavLink
-              to="/employees"
+              to={appHref("employees")}
               className={({ isActive }) =>
                 `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
               }

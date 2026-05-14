@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { appHref } from "../../utils/auth";
 import { getProducts } from "../../api/ordersApi";
 import { colors } from "../../constants/colors";
 import { normalizeProductListFromApi } from "../../utils/normalizeProductListFromApi";
@@ -139,7 +140,7 @@ export default function ProductsPage() {
           <h1>المنتجات</h1>
           <p>إدارة وعرض منتجات المتجر بشكل حديث وسريع.</p>
         </div>
-        <Link to="/products/create" className="products-page__add-btn">
+        <Link to={appHref("products/create")} className="products-page__add-btn">
           + إضافة منتج
         </Link>
       </section>
@@ -210,7 +211,7 @@ export default function ProductsPage() {
                     </span>
                     {editId != null ? (
                       <Link
-                        to={`/products/${encodeURIComponent(String(editId))}/edit`}
+                        to={appHref(`products/${encodeURIComponent(String(editId))}/edit`)}
                         className="product-card__edit-link"
                       >
                         تعديل
@@ -221,7 +222,7 @@ export default function ProductsPage() {
                   {/* <div className="product-card__actions">
                     {editId != null ? (
                       <Link
-                        to={`/products/${encodeURIComponent(String(editId))}/edit`}
+                        to={appHref(`products/${encodeURIComponent(String(editId))}/edit`)}
                         className="product-card__action-btn product-card__action-btn--edit"
                       >
                         ✏️ تعديل

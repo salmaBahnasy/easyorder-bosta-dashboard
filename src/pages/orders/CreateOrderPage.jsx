@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createOrder, getProducts, getZones } from "../../api/ordersApi";
+import { appHref } from "../../utils/auth";
 import {
   cartRowSelectValue,
   catalogProductDisplayName,
@@ -243,7 +244,7 @@ export default function CreateOrderPage() {
       updateCartRow(rowKey, {
         sku: "",
         name: "",
-        price: 0,
+        price: "",
         catalogProductId: null,
         catalogProductKey: "",
         catalogOptionId: "",
@@ -255,11 +256,11 @@ export default function CreateOrderPage() {
     );
     if (idx === -1) return;
     const fields = productToCartFields(catalogProducts[idx]);
-    updateCartRow(rowKey, { ...fields, catalogOptionId: optionId });
+    updateCartRow(rowKey, { ...fields, price: "", catalogOptionId: optionId });
   }
 
   function handleBack() {
-    navigate("/orders");
+    navigate(appHref("orders"));
   }
 
   async function handleCreateOrder() {
@@ -330,7 +331,7 @@ export default function CreateOrderPage() {
       setCreating(true);
       await createOrder(payload);
       alert("تم إنشاء الطلب بنجاح");
-      navigate("/orders");
+      navigate(appHref("orders"));
     } catch (error) {
       console.log(error);
       const message =
@@ -439,12 +440,13 @@ export default function CreateOrderPage() {
                           type="number"
                           min={0}
                           step="0.01"
-                          value={row.price}
-                          onChange={(e) =>
+                          value={row.price === "" || row.price == null ? "" : row.price}
+                          onChange={(e) => {
+                            const raw = e.target.value;
                             updateCartRow(row.key, {
-                              price: Number(e.target.value) || 0,
-                            })
-                          }
+                              price: raw === "" ? "" : Number(raw),
+                            });
+                          }}
                         />
                       </td>
                       <td>{formatMoney(lineSubtotal(row))} ج</td>

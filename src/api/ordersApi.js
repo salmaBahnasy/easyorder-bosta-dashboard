@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getOrderAuditFields } from "../utils/orderAudit";
+import { getDashboardApiPrefix } from "../utils/auth";
 
 const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://127.0.0.1:5050";
 
@@ -29,6 +30,12 @@ apiClient.interceptors.request.use(
     return Promise.reject(error);
   },
 );
+
+function dashboardApiPath(resourcePath) {
+  const prefix = getDashboardApiPrefix();
+  const r = String(resourcePath ?? "").replace(/^\/+/, "");
+  return `${prefix}/${r}`;
+}
 
 apiClient.interceptors.response.use(
   (response) => {
@@ -111,19 +118,19 @@ export async function getOrders({
     ),
   );
 
-  const response = await apiClient.get("/api/orders", { params: cleaned });
+  const response = await apiClient.get(dashboardApiPath("orders"), { params: cleaned });
 
   return response.data;
 }
 
 export async function getOrderDetails(orderId) {
-  const response = await apiClient.get(`/api/orders/${orderId}`);
+  const response = await apiClient.get(dashboardApiPath(`orders/${orderId}`));
   return response.data;
 }
 
 export async function createOrder(payload) {
   const body = { ...payload, ...getOrderAuditFields() };
-  const response = await apiClient.post("/api/orders", body);
+  const response = await apiClient.post(dashboardApiPath("orders"), body);
   return response.data;
 }
 
@@ -136,13 +143,16 @@ export async function getZones() {
 
 export async function updateOrderStatus(orderId, status) {
   const body = { status, ...getOrderAuditFields() };
-  const response = await apiClient.patch(`/api/orders/${orderId}/status`, body);
+  const response = await apiClient.patch(
+    dashboardApiPath(`orders/${orderId}/status`),
+    body,
+  );
   return response.data;
 }
 
 export async function updateOrder(orderId, payload) {
   const body = { ...payload, ...getOrderAuditFields() };
-  const response = await apiClient.patch(`/api/orders/${orderId}`, body);
+  const response = await apiClient.patch(dashboardApiPath(`orders/${orderId}`), body);
   return response.data;
 }
 
@@ -152,7 +162,7 @@ export async function getOrdersStats(params = {}) {
       ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
     ),
   );
-  const response = await apiClient.get("/api/orders/stats", { params: clean });
+  const response = await apiClient.get(dashboardApiPath("orders/stats"), { params: clean });
   return response.data;
 }
 
@@ -162,7 +172,7 @@ export async function getOrdersAnalytics(params = {}) {
       ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
     ),
   );
-  const response = await apiClient.get("/api/orders/analytics", { params: clean });
+  const response = await apiClient.get(dashboardApiPath("orders/analytics"), { params: clean });
   return response.data;
 }
 
@@ -170,27 +180,34 @@ export async function getProducts({ page = 1, limit = 50, search } = {}) {
   const params = { page, limit };
   const q = typeof search === "string" ? search.trim() : "";
   if (q) params.search = q;
-  const response = await apiClient.get("/api/products", { params });
+  const response = await apiClient.get(dashboardApiPath("products"), { params });
   return response.data;
 }
 
 export async function getProductById(productId) {
-  const response = await apiClient.get(`/api/products/${productId}`);
+  const response = await apiClient.get(dashboardApiPath(`products/${productId}`));
   return response.data;
 }
 
 export async function createProduct(payload) {
-  const response = await apiClient.post("/api/products", payload);
+  const response = await apiClient.post(dashboardApiPath("products"), payload);
   return response.data;
 }
 
 export async function updateProduct(productId, payload) {
-  const response = await apiClient.patch(`/api/products/${productId}`, payload);
+  const response = await apiClient.patch(
+    dashboardApiPath(`products/${productId}`),
+    payload,
+  );
   return response.data;
 }
 
-export async function loginSenior({ email, password }) {
-  const response = await apiClient.post("/api/employees/login-senior", {
+/**
+ * @param {"easyorder" | "salla"} system
+ */
+export async function loginDashboard(system, { email, password }) {
+  const prefix = system === "salla" ? "/api/salla" : "/api/easyorder";
+  const response = await apiClient.post(`${prefix}/auth/login`, {
     email,
     password,
   });
@@ -198,7 +215,7 @@ export async function loginSenior({ email, password }) {
 }
 
 export async function getEmployees() {
-  const response = await apiClient.get("/api/employees");
+  const response = await apiClient.get(dashboardApiPath("employees"));
   return response.data;
 }
 
@@ -208,7 +225,7 @@ export async function createEmployee({ name, email, password, is_active, employe
       ? normalizeEmployeeRoleForApi(employeeRole)
       : "employee";
 
-  const response = await apiClient.post("/api/employees", {
+  const response = await apiClient.post(dashboardApiPath("employees"), {
     name,
     email,
     password,
@@ -226,13 +243,13 @@ function normalizeEmployeeRoleForApi(value) {
 
 export async function updateEmployee(employeeId, payload) {
   const response = await apiClient.patch(
-    `/api/employees/${employeeId}`,
+    dashboardApiPath(`employees/${employeeId}`),
     payload,
   );
   return response.data;
 }
 
 export async function deleteEmployee(employeeId) {
-  const response = await apiClient.delete(`/api/employees/${employeeId}`);
+  const response = await apiClient.delete(dashboardApiPath(`employees/${employeeId}`));
   return response.data;
 }

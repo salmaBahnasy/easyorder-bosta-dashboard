@@ -1,5 +1,37 @@
 const TOKEN_STORAGE_KEY = "easyorder_token";
 const EMPLOYEE_ROLE_STORAGE_KEY = "easyorder_employee_role";
+export const SELECTED_SYSTEM_STORAGE_KEY = "selectedSystem";
+
+/** @returns {"easyorder" | "salla"} */
+export function getSelectedSystem() {
+  const raw = localStorage.getItem(SELECTED_SYSTEM_STORAGE_KEY);
+  return raw === "salla" ? "salla" : "easyorder";
+}
+
+/** @param {"easyorder" | "salla"} system */
+export function setSelectedSystem(system) {
+  localStorage.setItem(
+    SELECTED_SYSTEM_STORAGE_KEY,
+    system === "salla" ? "salla" : "easyorder",
+  );
+}
+
+/** Base path for the authenticated app, e.g. `/easyorder` or `/salla`. */
+export function getAppBasePath() {
+  return getSelectedSystem() === "salla" ? "/salla" : "/easyorder";
+}
+
+/** API prefix for dashboard calls, e.g. `/api/easyorder` or `/api/salla`. */
+export function getDashboardApiPrefix() {
+  return getSelectedSystem() === "salla" ? "/api/salla" : "/api/easyorder";
+}
+
+/** Absolute in-app path, e.g. `appHref("orders/create")` -> `/easyorder/orders/create`. */
+export function appHref(pathWithoutLeadingSlash) {
+  const p = String(pathWithoutLeadingSlash ?? "").replace(/^\/+/, "");
+  const base = getAppBasePath();
+  return p ? `${base}/${p}` : base;
+}
 
 function decodeJwtPayload(token) {
   try {
@@ -151,6 +183,7 @@ export function clearAuthStorage() {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
   localStorage.removeItem("easyorder_user");
   localStorage.removeItem(EMPLOYEE_ROLE_STORAGE_KEY);
+  localStorage.removeItem(SELECTED_SYSTEM_STORAGE_KEY);
 }
 
 export function isTokenValid(token) {

@@ -6,6 +6,7 @@ import {
   getProducts,
   resolveEmployeeOrderFilterParams,
 } from "../../api/ordersApi";
+import { appHref } from "../../utils/auth";
 import OrdersTable from "../../components/OrdersTable";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
 import { getSelfEmployeeRowsForFilter, isStoredUserAdmin } from "../../utils/auth";
@@ -275,7 +276,7 @@ export default function OrdersPage() {
   }
 
   function handleViewDetails(order) {
-    navigate("/orders/payload-details", {
+    navigate(appHref("orders/payload-details"), {
       state: { returnTo: location.pathname, order },
     });
   }
@@ -346,7 +347,7 @@ export default function OrdersPage() {
         </div>
         <div className="orders-page__header-actions">
           <button
-            onClick={() => navigate("/orders/create")}
+            onClick={() => navigate(appHref("orders/create"))}
             className="orders-page__btn orders-page__btn--primary"
             type="button"
           >

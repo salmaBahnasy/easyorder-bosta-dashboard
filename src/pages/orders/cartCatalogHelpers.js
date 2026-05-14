@@ -87,7 +87,7 @@ export function createEmptyCartRow() {
     name: "",
     variant: "",
     quantity: 1,
-    price: 0,
+    price: "",
     catalogProductId: null,
     catalogProductKey: "",
     catalogOptionId: "",
