@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createOrder, getProducts, getZones } from "../../api/ordersApi";
+import {
+  createOrder,
+  getBostaCities,
+  getBostaDistricts,
+  getProducts,
+} from "../../api/ordersApi";
 import { appHref } from "../../utils/auth";
 import {
   cartRowSelectValue,
@@ -36,6 +41,7 @@ const ORDER_SOURCE_OPTIONS = [
   { value: "messenger", label: "ماسنجر" },
   { value: "whatsapp", label: "واتساب" },
   { value: "lost_order", label: "طلب ضائع" },
+  { value: "old_customer", label: "عميل قديم" },
 ];
 
 const ORDER_TYPE_OPTIONS = [
@@ -83,10 +89,35 @@ function lineSubtotal(row) {
   return q * p;
 }
 
+function normalizeBostaCities(payload) {
+  const list = payload?.data?.list;
+  if (Array.isArray(list)) return list;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+function normalizeBostaDistricts(payload) {
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
+function bostaCityLabel(city) {
+  const label = String(city?.nameAr ?? "").trim();
+  return label || "—";
+}
+
+function bostaDistrictLabel(district) {
+  const label = String(district?.districtOtherName ?? "").trim();
+  return label || "—";
+}
+
 export default function CreateOrderPage() {
   const navigate = useNavigate();
-  const [zones, setZones] = useState([]);
-  const [zonesLoading, setZonesLoading] = useState(false);
+  const [cities, setCities] = useState([]);
+  const [citiesLoading, setCitiesLoading] = useState(false);
+  const [districts, setDistricts] = useState([]);
+  const [districtsLoading, setDistrictsLoading] = useState(false);
   const [cartItems, setCartItems] = useState(() => [createEmptyCartRow()]);
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -114,33 +145,27 @@ export default function CreateOrderPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadZones() {
+    async function loadCities() {
       try {
-        setZonesLoading(true);
-        const result = await getZones();
-        const list = Array.isArray(result?.data)
-          ? result.data
-          : Array.isArray(result?.zones)
-            ? result.zones
-            : Array.isArray(result)
-              ? result
-              : [];
+        setCitiesLoading(true);
+        const result = await getBostaCities();
+        const list = normalizeBostaCities(result);
         if (!cancelled) {
-          setZones(list);
+          setCities(list);
         }
       } catch (e) {
         console.log(e);
         if (!cancelled) {
-          setZones([]);
+          setCities([]);
         }
       } finally {
         if (!cancelled) {
-          setZonesLoading(false);
+          setCitiesLoading(false);
         }
       }
     }
 
-    loadZones();
+    loadCities();
     return () => {
       cancelled = true;
     };
@@ -169,32 +194,62 @@ export default function CreateOrderPage() {
     };
   }, []);
 
-  const districts = useMemo(() => {
-    const selectedCity = zones.find(
-      (zone) =>
-        String(zone?._id ?? zone?.id ?? "") === String(form.cityId) ||
-        String(zone?.zoneId ?? "") === String(form.cityId),
-    );
-    const list = selectedCity?.districts ?? selectedCity?.areas ?? [];
-    return Array.isArray(list) ? list : [];
-  }, [zones, form.cityId]);
-
   useEffect(() => {
-    const selectedCity = zones.find(
-      (zone) =>
-        String(zone?._id ?? zone?.id ?? "") === String(form.cityId) ||
-        String(zone?.zoneId ?? "") === String(form.cityId),
-    );
-    if (!selectedCity) return;
+    const cityId = String(form.cityId ?? "").trim();
+    if (!cityId) {
+      setDistricts([]);
+      return undefined;
+    }
 
+    let cancelled = false;
+
+    async function loadDistricts() {
+      try {
+        setDistrictsLoading(true);
+        const result = await getBostaDistricts(cityId);
+        const list = normalizeBostaDistricts(result);
+        if (!cancelled) {
+          setDistricts(list);
+        }
+      } catch (e) {
+        console.log(e);
+        if (!cancelled) {
+          setDistricts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setDistrictsLoading(false);
+        }
+      }
+    }
+
+    loadDistricts();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.cityId]);
+
+  function handleCityChange(cityId) {
+    const selected = cities.find((c) => String(c?._id ?? "") === String(cityId));
     setForm((prev) => ({
       ...prev,
-      cityName: selectedCity.name ?? selectedCity.zoneName ?? prev.cityName,
+      cityId,
+      districtId: "",
+      cityName: selected ? bostaCityLabel(selected) : "",
     }));
-  }, [form.cityId, zones]);
+  }
+
+  function handleDistrictChange(districtId) {
+    setField("districtId", districtId);
+  }
 
   const itemsSubtotal = useMemo(
     () => cartItems.reduce((sum, row) => sum + lineSubtotal(row), 0),
+    [cartItems],
+  );
+
+  const totalPieces = useMemo(
+    () => cartItems.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0),
     [cartItems],
   );
 
@@ -278,7 +333,18 @@ export default function CreateOrderPage() {
     }
 
     const uiStatus = selectedOrderStatus || "جديد";
-    const backendStatus = backendStatusMap[uiStatus] ?? "new";
+    let backendStatus = backendStatusMap[uiStatus] ?? "new";
+    let shippingStatusForApi;
+
+    if (uiStatus === "تم الشحن") {
+      backendStatus = backendStatusMap["تم الشحن"];
+      shippingStatusForApi = form.shipping_status;
+    } else if (uiStatus === "تم التأكيد" && form.shipping_status === "in_progress") {
+      backendStatus = backendStatusMap["تم الشحن"];
+      shippingStatusForApi = "in_progress";
+    } else if (uiStatus === "تم التأكيد" && form.shipping_status) {
+      shippingStatusForApi = form.shipping_status;
+    }
 
     const cartPayload = linesForPayload.map((row) => {
       const item = {
@@ -317,7 +383,7 @@ export default function CreateOrderPage() {
       status: backendStatus,
       order_source: form.order_source,
       order_type: form.order_type,
-      ...(uiStatus === "تم الشحن" ? { shipping_status: form.shipping_status } : {}),
+      ...(shippingStatusForApi ? { shipping_status: shippingStatusForApi } : {}),
       shipping_cost: Number(form.shipping_cost) || 0,
       payment_method: form.payment_method,
       total: Number(form.codAmount) || grandTotalSuggested || 0,
@@ -541,18 +607,17 @@ export default function CreateOrderPage() {
                   <select
                     className="order-details-page__input"
                     value={form.cityId}
-                    onChange={(e) => {
-                      setField("cityId", e.target.value);
-                      setField("districtId", "");
-                    }}
-                    disabled={zonesLoading}
+                    onChange={(e) => handleCityChange(e.target.value)}
+                    disabled={citiesLoading}
                   >
-                    <option value="">اختر المدينة</option>
-                    {zones.map((zone) => {
-                      const id = zone?._id ?? zone?.id ?? zone?.zoneId;
+                    <option value="">
+                      {citiesLoading ? "جاري تحميل المدن..." : "اختر المدينة"}
+                    </option>
+                    {cities.map((city) => {
+                      const id = city?._id ?? city?.id;
                       return (
                         <option key={id} value={id}>
-                          {zone?.name ?? zone?.zoneName ?? "—"}
+                          {bostaCityLabel(city)}
                         </option>
                       );
                     })}
@@ -563,15 +628,21 @@ export default function CreateOrderPage() {
                   <select
                     className="order-details-page__input"
                     value={form.districtId}
-                    onChange={(e) => setField("districtId", e.target.value)}
-                    disabled={!form.cityId}
+                    onChange={(e) => handleDistrictChange(e.target.value)}
+                    disabled={!form.cityId || districtsLoading}
                   >
-                    <option value="">اختر المنطقة</option>
+                    <option value="">
+                      {!form.cityId
+                        ? "اختر المدينة أولاً"
+                        : districtsLoading
+                          ? "جاري تحميل المناطق..."
+                          : "اختر المنطقة"}
+                    </option>
                     {districts.map((district) => {
-                      const id = district?._id ?? district?.id ?? district?.districtId;
+                      const id = district?.districtId ?? district?._id ?? district?.id;
                       return (
                         <option key={id} value={id}>
-                          {district?.name ?? district?.districtName ?? "—"}
+                          {bostaDistrictLabel(district)}
                         </option>
                       );
                     })}
@@ -690,6 +761,10 @@ export default function CreateOrderPage() {
             <div className="order-details-page__summary-row">
               <span>عدد بنود السلة</span>
               <strong>{cartItems.length}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>عدد القطع</span>
+              <strong>{totalPieces}</strong>
             </div>
             <div className="order-details-page__summary-row">
               <span>مجموع المنتجات</span>

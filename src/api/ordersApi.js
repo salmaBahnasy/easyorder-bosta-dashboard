@@ -141,6 +141,22 @@ export async function getZones() {
   return response.data;
 }
 
+/** Bosta cities list — `GET /api/{system}/bosta/cities` */
+export async function getBostaCities() {
+  const response = await apiClient.get(dashboardApiPath("bosta/cities"));
+  return response.data;
+}
+
+/** Bosta districts for a city — `GET /api/{system}/bosta/cities/:cityId/districts` */
+export async function getBostaDistricts(cityId) {
+  const id = String(cityId ?? "").trim();
+  if (!id) return { data: [] };
+  const response = await apiClient.get(
+    dashboardApiPath(`bosta/cities/${encodeURIComponent(id)}/districts`),
+  );
+  return response.data;
+}
+
 export async function updateOrderStatus(orderId, status) {
   const body = { status, ...getOrderAuditFields() };
   const response = await apiClient.patch(
@@ -163,6 +179,19 @@ export async function getOrdersStats(params = {}) {
     ),
   );
   const response = await apiClient.get(dashboardApiPath("orders/stats"), { params: clean });
+  return response.data;
+}
+
+/** Orders trend + summary KPIs — `GET /api/{system}/orders/stats/trend` */
+export async function getOrdersStatsTrend(params = {}) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+  const response = await apiClient.get(dashboardApiPath("orders/stats/trend"), {
+    params: clean,
+  });
   return response.data;
 }
 

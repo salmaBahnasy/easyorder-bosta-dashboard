@@ -20,7 +20,7 @@ export default function StatCard({
           {icon}
         </span>
       </div>
-      <strong className="dashboard-stat-card__value">{value}</strong>
+      <p className="dashboard-stat-card__value">{value}</p>
       {hasTrend ? (
         <p className={`dashboard-stat-card__trend ${trendUp ? "is-up" : "is-down"}`}>
           <span className="dashboard-stat-card__trend-num">

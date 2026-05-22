@@ -1,12 +1,13 @@
 import {
+  orderCartProductLines,
   orderCustomer,
   orderDate,
   orderDisplayId,
   orderPhone,
-  orderProductBlock,
   orderRowKey,
   orderShippingStatus,
   orderStatus,
+  orderUpdatedByName,
 } from "../utils/orderDisplay";
 import "./OrdersTable.css";
 
@@ -85,14 +86,14 @@ export default function OrdersTable({ orders, onViewDetails }) {
             {/* <th>الإجمالي</th> */}
             {/* <th>الدفع</th> */}
             <th>التاريخ</th>
+            <th>آخر تحديث بواسطة</th>
             <th>إجراء</th>
           </tr>
         </thead>
 
         <tbody>
           {orders.map((order, index) => {
-            const { name: productName, variant: productVariant } =
-              orderProductBlock(order);
+            const productLines = orderCartProductLines(order);
             const statusView = getStatusPresentation(orderStatus(order));
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
@@ -120,9 +121,28 @@ export default function OrdersTable({ orders, onViewDetails }) {
                   </div>
                 </td>
                 <td className="orders-table__product-cell">
-                  <strong>{productName}</strong>
+                  {productLines.length === 0 ? (
+                    <strong>—</strong>
+                  ) : (
+                    <ul className="orders-table__product-list">
+                      {productLines.map((line, lineIdx) => (
+                        <li key={`${orderRowKey(order, index)}-p-${lineIdx}`}>
+                          <p>{line.name}</p>
+                          {line.quantity != null ? (
+                            <span className="orders-table__product-qty">
+                              {" "}
+                              ×{line.quantity}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </td>
                 <td>{formatDateTime(orderDate(order))}</td>
+                <td className="orders-table__updated-by">
+                  {orderUpdatedByName(order)}
+                </td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <div className="orders-table__actions">
                    

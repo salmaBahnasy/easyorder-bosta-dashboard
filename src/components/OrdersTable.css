@@ -45,6 +45,30 @@
   min-width: 220px;
 }
 
+.orders-table__product-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.orders-table__product-list li {
+  line-height: 1.35;
+}
+
+.orders-table__product-qty {
+  font-weight: 600;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.orders-table__updated-by {
+  min-width: 120px;
+  color: #475569;
+  font-weight: 600;
+}
+
 .orders-table__badge {
   display: inline-block;
   padding: 4px 10px;

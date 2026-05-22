@@ -58,6 +58,7 @@ export default function OrdersPage() {
     { value: "messenger", label: "ماسنجر" },
     { value: "whatsapp", label: "واتساب" },
     { value: "lost_order", label: "طلب ضائع" },
+    { value: "old_customer", label: "عميل قديم" },
   ];
 
   const orderTypeOptions = [

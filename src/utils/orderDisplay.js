@@ -109,6 +109,57 @@ export function orderProductBlock(order) {
   return { name: "—", variant: "" };
 }
 
+/** All cart / line items for table display: `{ name, quantity }[]`. */
+export function orderCartProductLines(order) {
+  if (order["Product Name"]) {
+    const qty = order["Product Quantity"];
+    return [
+      {
+        name: toDisplayText(order["Product Name"]),
+        quantity:
+          qty != null && qty !== "" && !Number.isNaN(Number(qty)) ? Number(qty) : null,
+      },
+    ];
+  }
+  if (order.lineItemsSummary) {
+    return [{ name: toDisplayText(order.lineItemsSummary), quantity: null }];
+  }
+
+  const items = order.cart_items ?? order.lineItems;
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => {
+      const name =
+        item?.name ??
+        item?.product_name ??
+        item?.title ??
+        item?.product?.name ??
+        (typeof item?.product === "string" ? item.product : null);
+      const qty = Number(item?.quantity ?? item?.qty);
+      return {
+        name: toDisplayText(name),
+        quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
+      };
+    });
+  }
+
+  const { name } = orderProductBlock(order);
+  if (name && name !== "—") {
+    return [{ name, quantity: null }];
+  }
+  return [];
+}
+
+export function orderUpdatedByName(order) {
+  const v =
+    order?.updated_by_name ??
+    order?.updatedByName ??
+    order?.updated_by?.name ??
+    order?.last_updated_by_name ??
+    order?.lastUpdatedByName;
+  const s = String(v ?? "").trim();
+  return s || "—";
+}
+
 export function orderQuantity(order) {
   if (order["Product Quantity"] != null && order["Product Quantity"] !== "") {
     return order["Product Quantity"];

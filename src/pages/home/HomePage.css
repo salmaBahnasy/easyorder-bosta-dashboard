@@ -168,6 +168,71 @@
   margin-bottom: 16px;
 }
 
+.dashboard-charts-row.dashboard-charts-row--trend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.dashboard-charts-row.dashboard-charts-row--trend .dashboard-trend-chart {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.dashboard-charts-row.dashboard-charts-row--donuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.dashboard-charts-row.dashboard-charts-row--donuts .dashboard-chart-card {
+  min-width: 0;
+}
+
+.dashboard-trend-chart__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dashboard-trend-chart__metric-select {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.dashboard-trend-chart__metric-select select {
+  min-width: 200px;
+  border: 1px solid #d8deec;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.dashboard-trend-chart__wrap {
+  min-height: 320px;
+  width: 100%;
+  overflow: visible;
+}
+
+.dashboard-trend-chart__wrap .recharts-wrapper {
+  overflow: visible !important;
+}
+
+.dashboard-trend-chart__wrap .recharts-surface {
+  overflow: visible;
+}
+
 .dashboard-stat-card,
 .dashboard-chart-card,
 .dashboard-table-card,
@@ -421,8 +486,8 @@
 }
 
 .dashboard-stat-card__value {
-  font-size: 28px;
-  font-weight: 800;
+  font-size: 20px;
+  /* font-weight: 800; */
   letter-spacing: -0.02em;
 }
 
@@ -481,9 +546,10 @@
 }
 
 .dashboard-recharts-wrap {
-  height: 280px;
+  height: 300px;
   width: 100%;
   margin-top: 8px;
+  overflow: visible;
 }
 
 .dashboard-donut-layout {
@@ -610,19 +676,30 @@
   border: 1px dashed #e2e8f0;
 }
 
-.dashboard-kpis--summary {
+.dashboard-kpis--summary,
+.dashboard-kpis--5 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 @media (max-width: 1200px) {
-  .dashboard-kpis--summary {
+  .dashboard-kpis--summary,
+  .dashboard-kpis--5 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-charts-row.dashboard-charts-row--donuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
-  .dashboard-kpis--summary {
+  .dashboard-kpis--summary,
+  .dashboard-kpis--5 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-charts-row.dashboard-charts-row--donuts {
+    grid-template-columns: 1fr;
   }
 }
 
