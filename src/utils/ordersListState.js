@@ -1,13 +1,15 @@
 import { getSelectedSystem } from "./auth";
+import { egyptTodayYmd } from "./dateRange";
 
 export function getDefaultOrdersFilters() {
+  const today = egyptTodayYmd();
   return {
     status: "",
     employee: "",
     customer_name: "",
     phone: "",
-    from: "",
-    to: "",
+    from: today,
+    to: today,
     order_source: "",
     order_type: "",
     shipping_status: "",
@@ -26,8 +28,14 @@ export function readOrdersListState() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
+    const defaults = getDefaultOrdersFilters();
+    const merged = { ...defaults, ...(parsed.filters ?? {}) };
+    if (!String(merged.from ?? "").trim() && !String(merged.to ?? "").trim()) {
+      merged.from = defaults.from;
+      merged.to = defaults.to;
+    }
     return {
-      filters: { ...getDefaultOrdersFilters(), ...(parsed.filters ?? {}) },
+      filters: merged,
       page: Number(parsed.page) > 0 ? Number(parsed.page) : 1,
     };
   } catch {
@@ -55,4 +63,27 @@ export function clearOrdersListState() {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Initial list state when opening the orders page.
+ * Fresh visit → today's date + page 1. Return from details → keep saved filters/page.
+ */
+export function resolveOrdersListBootState(locationState) {
+  const fromDetails = Boolean(locationState?.ordersListState);
+  const stored = locationState?.ordersListState ?? readOrdersListState();
+  const today = egyptTodayYmd();
+  const defaults = getDefaultOrdersFilters();
+
+  let filters = { ...defaults, ...(stored?.filters ?? {}) };
+  let page = Number(stored?.page) > 0 ? Number(stored.page) : 1;
+
+  if (!fromDetails) {
+    filters = { ...filters, from: today, to: today };
+    page = 1;
+  } else if (!String(filters.from ?? "").trim() && !String(filters.to ?? "").trim()) {
+    filters = { ...filters, from: today, to: today };
+  }
+
+  return { filters, page, fromDetails };
 }

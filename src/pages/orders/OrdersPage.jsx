@@ -17,7 +17,7 @@ import {
 import {
   clearOrdersListState,
   getDefaultOrdersFilters,
-  readOrdersListState,
+  resolveOrdersListBootState,
   writeOrdersListState,
 } from "../../utils/ordersListState";
 import "./OrdersPage.css";
@@ -25,16 +25,13 @@ import "./OrdersPage.css";
 export default function OrdersPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const restoredListStateRef = useRef(null);
-  if (restoredListStateRef.current === null) {
-    restoredListStateRef.current =
-      location.state?.ordersListState ?? readOrdersListState();
+  const bootStateRef = useRef(null);
+  if (bootStateRef.current === null) {
+    bootStateRef.current = resolveOrdersListBootState(location.state);
   }
 
   const [orders, setOrders] = useState([]);
-  const [page, setPage] = useState(
-    () => restoredListStateRef.current?.page ?? 1,
-  );
+  const [page, setPage] = useState(() => bootStateRef.current.page);
   const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -42,9 +39,7 @@ export default function OrdersPage() {
   const [employees, setEmployees] = useState([]);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
-  const [filters, setFilters] = useState(
-    () => restoredListStateRef.current?.filters ?? getDefaultOrdersFilters(),
-  );
+  const [filters, setFilters] = useState(() => bootStateRef.current.filters);
 
   const statusOptions = [
     { value: "", label: "كل الحالات" },
@@ -173,11 +168,11 @@ export default function OrdersPage() {
   }
 
   useEffect(() => {
-    if (location.state?.ordersListState) {
+    if (bootStateRef.current.fromDetails) {
       navigate(location.pathname, { replace: true, state: {} });
     }
-    const restored = restoredListStateRef.current;
-    fetchOrders(restored?.page ?? 1, restored?.filters ?? getDefaultOrdersFilters());
+    const boot = bootStateRef.current;
+    fetchOrders(boot.page, boot.filters);
   }, []);
 
   useEffect(() => {
