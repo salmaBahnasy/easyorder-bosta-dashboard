@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getProducts, getZones, updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import { getProducts, updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import { appHref } from "../../utils/auth";
+import { bostaCityLabel } from "../../utils/bostaLocation";
 import {
   cartRowSelectValue,
   catalogProductDisplayName,
@@ -164,8 +166,6 @@ export default function OrderPayloadDetailsPage() {
   const returnTo = location.state?.returnTo ?? appHref("orders");
   const order = location.state?.order ?? null;
 
-  const [zones, setZones] = useState([]);
-  const [zonesLoading, setZonesLoading] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -191,41 +191,6 @@ export default function OrderPayloadDetailsPage() {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadZones() {
-      try {
-        setZonesLoading(true);
-        const result = await getZones();
-        const list = Array.isArray(result?.data)
-          ? result.data
-          : Array.isArray(result?.zones)
-            ? result.zones
-            : Array.isArray(result)
-              ? result
-              : [];
-        if (!cancelled) {
-          setZones(list);
-        }
-      } catch (e) {
-        console.log(e);
-        if (!cancelled) {
-          setZones([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setZonesLoading(false);
-        }
-      }
-    }
-
-    loadZones();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -312,30 +277,6 @@ export default function OrderPayloadDetailsPage() {
     () => formatMoney(grandTotalSuggested),
     [grandTotalSuggested],
   );
-
-  const districts = useMemo(() => {
-    const selectedCity = zones.find(
-      (zone) =>
-        String(zone?._id ?? zone?.id ?? "") === String(form.cityId) ||
-        String(zone?.zoneId ?? "") === String(form.cityId)
-    );
-    const list = selectedCity?.districts ?? selectedCity?.areas ?? [];
-    return Array.isArray(list) ? list : [];
-  }, [zones, form.cityId]);
-
-  useEffect(() => {
-    const selectedCity = zones.find(
-      (zone) =>
-        String(zone?._id ?? zone?.id ?? "") === String(form.cityId) ||
-        String(zone?.zoneId ?? "") === String(form.cityId)
-    );
-    if (!selectedCity) return;
-
-    setForm((prev) => ({
-      ...prev,
-      cityName: selectedCity.name ?? selectedCity.zoneName ?? prev.cityName,
-    }));
-  }, [form.cityId, zones]);
 
   function setField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -980,58 +921,28 @@ export default function OrderPayloadDetailsPage() {
                   />
                 </label>
               </div>
-              <div className="order-details-page__fields-row order-details-page__fields-row--tri">
-                <label className="order-details-page__field">
-                  المدينة
-                  <select
-                    className="order-details-page__input"
-                    value={form.cityId}
-                    onChange={(e) => {
-                      setField("cityId", e.target.value);
-                      setField("districtId", "");
-                    }}
-                    disabled={zonesLoading}
-                  >
-                    <option value="">اختر المدينة</option>
-                    {zones.map((zone) => {
-                      const id = zone?._id ?? zone?.id ?? zone?.zoneId;
-                      return (
-                        <option key={id} value={id}>
-                          {zone?.name ?? zone?.zoneName ?? "—"}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label className="order-details-page__field">
-                  المنطقة
-                  <select
-                    className="order-details-page__input"
-                    value={form.districtId}
-                    onChange={(e) => setField("districtId", e.target.value)}
-                    disabled={!form.cityId}
-                  >
-                    <option value="">اختر المنطقة</option>
-                    {districts.map((district) => {
-                      const id = district?._id ?? district?.id ?? district?.districtId;
-                      return (
-                        <option key={id} value={id}>
-                          {district?.name ?? district?.districtName ?? "—"}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label className="order-details-page__field order-details-page__field--checkbox-row">
-                  <span>السماح بفتح الشحنة</span>
-                  <input
-                    type="checkbox"
-                    className="order-details-page__checkbox-input"
-                    checked={Boolean(form.allowToOpenPackage)}
-                    onChange={(e) => setField("allowToOpenPackage", e.target.checked)}
-                  />
-                </label>
-              </div>
+              <BostaCityDistrictFields
+                cityId={form.cityId}
+                districtId={form.districtId}
+                onCityChange={(cityId, cityOption) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    cityId,
+                    districtId: "",
+                    cityName: cityOption ? bostaCityLabel(cityOption) : prev.cityName,
+                  }))
+                }
+                onDistrictChange={(districtId) => setField("districtId", districtId)}
+              />
+              <label className="order-details-page__field order-details-page__field--full order-details-page__field--checkbox-row">
+                <span>السماح بفتح الشحنة</span>
+                <input
+                  type="checkbox"
+                  className="order-details-page__checkbox-input"
+                  checked={Boolean(form.allowToOpenPackage)}
+                  onChange={(e) => setField("allowToOpenPackage", e.target.checked)}
+                />
+              </label>
               <label className="order-details-page__field order-details-page__field--full">
                 العنوان
                 <input

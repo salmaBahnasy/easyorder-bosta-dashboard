@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  createOrder,
-  getBostaCities,
-  getBostaDistricts,
-  getProducts,
-} from "../../api/ordersApi";
+import { createOrder, getProducts } from "../../api/ordersApi";
+import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import { appHref } from "../../utils/auth";
 import {
   cartRowSelectValue,
@@ -16,6 +12,7 @@ import {
   productToCartFields,
   unwrapCatalogProduct,
 } from "./cartCatalogHelpers";
+import { bostaCityLabel } from "../../utils/bostaLocation";
 import { normalizeProductListFromApi } from "../../utils/normalizeProductListFromApi";
 import "./OrderPayloadDetailsPage.css";
 import "./CreateOrderPage.css";
@@ -89,35 +86,8 @@ function lineSubtotal(row) {
   return q * p;
 }
 
-function normalizeBostaCities(payload) {
-  const list = payload?.data?.list;
-  if (Array.isArray(list)) return list;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
-}
-
-function normalizeBostaDistricts(payload) {
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload)) return payload;
-  return [];
-}
-
-function bostaCityLabel(city) {
-  const label = String(city?.nameAr ?? "").trim();
-  return label || "—";
-}
-
-function bostaDistrictLabel(district) {
-  const label = String(district?.districtOtherName ?? "").trim();
-  return label || "—";
-}
-
 export default function CreateOrderPage() {
   const navigate = useNavigate();
-  const [cities, setCities] = useState([]);
-  const [citiesLoading, setCitiesLoading] = useState(false);
-  const [districts, setDistricts] = useState([]);
-  const [districtsLoading, setDistrictsLoading] = useState(false);
   const [cartItems, setCartItems] = useState(() => [createEmptyCartRow()]);
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -145,35 +115,6 @@ export default function CreateOrderPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadCities() {
-      try {
-        setCitiesLoading(true);
-        const result = await getBostaCities();
-        const list = normalizeBostaCities(result);
-        if (!cancelled) {
-          setCities(list);
-        }
-      } catch (e) {
-        console.log(e);
-        if (!cancelled) {
-          setCities([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setCitiesLoading(false);
-        }
-      }
-    }
-
-    loadCities();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
     async function loadCatalog() {
       try {
         setCatalogLoading(true);
@@ -193,55 +134,6 @@ export default function CreateOrderPage() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    const cityId = String(form.cityId ?? "").trim();
-    if (!cityId) {
-      setDistricts([]);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    async function loadDistricts() {
-      try {
-        setDistrictsLoading(true);
-        const result = await getBostaDistricts(cityId);
-        const list = normalizeBostaDistricts(result);
-        if (!cancelled) {
-          setDistricts(list);
-        }
-      } catch (e) {
-        console.log(e);
-        if (!cancelled) {
-          setDistricts([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setDistrictsLoading(false);
-        }
-      }
-    }
-
-    loadDistricts();
-    return () => {
-      cancelled = true;
-    };
-  }, [form.cityId]);
-
-  function handleCityChange(cityId) {
-    const selected = cities.find((c) => String(c?._id ?? "") === String(cityId));
-    setForm((prev) => ({
-      ...prev,
-      cityId,
-      districtId: "",
-      cityName: selected ? bostaCityLabel(selected) : "",
-    }));
-  }
-
-  function handleDistrictChange(districtId) {
-    setField("districtId", districtId);
-  }
 
   const itemsSubtotal = useMemo(
     () => cartItems.reduce((sum, row) => sum + lineSubtotal(row), 0),
@@ -601,63 +493,28 @@ export default function CreateOrderPage() {
                   />
                 </label>
               </div>
-              <div className="order-details-page__fields-row order-details-page__fields-row--tri">
-                <label className="order-details-page__field">
-                  المدينة
-                  <select
-                    className="order-details-page__input"
-                    value={form.cityId}
-                    onChange={(e) => handleCityChange(e.target.value)}
-                    disabled={citiesLoading}
-                  >
-                    <option value="">
-                      {citiesLoading ? "جاري تحميل المدن..." : "اختر المدينة"}
-                    </option>
-                    {cities.map((city) => {
-                      const id = city?._id ?? city?.id;
-                      return (
-                        <option key={id} value={id}>
-                          {bostaCityLabel(city)}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label className="order-details-page__field">
-                  المنطقة
-                  <select
-                    className="order-details-page__input"
-                    value={form.districtId}
-                    onChange={(e) => handleDistrictChange(e.target.value)}
-                    disabled={!form.cityId || districtsLoading}
-                  >
-                    <option value="">
-                      {!form.cityId
-                        ? "اختر المدينة أولاً"
-                        : districtsLoading
-                          ? "جاري تحميل المناطق..."
-                          : "اختر المنطقة"}
-                    </option>
-                    {districts.map((district) => {
-                      const id = district?.districtId ?? district?._id ?? district?.id;
-                      return (
-                        <option key={id} value={id}>
-                          {bostaDistrictLabel(district)}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label className="order-details-page__field order-details-page__field--checkbox-row">
-                  <span>السماح بفتح الشحنة</span>
-                  <input
-                    type="checkbox"
-                    className="order-details-page__checkbox-input"
-                    checked={Boolean(form.allowToOpenPackage)}
-                    onChange={(e) => setField("allowToOpenPackage", e.target.checked)}
-                  />
-                </label>
-              </div>
+              <BostaCityDistrictFields
+                cityId={form.cityId}
+                districtId={form.districtId}
+                onCityChange={(cityId, cityOption) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    cityId,
+                    districtId: "",
+                    cityName: cityOption ? bostaCityLabel(cityOption) : "",
+                  }))
+                }
+                onDistrictChange={(districtId) => setField("districtId", districtId)}
+              />
+              <label className="order-details-page__field order-details-page__field--full order-details-page__field--checkbox-row">
+                <span>السماح بفتح الشحنة</span>
+                <input
+                  type="checkbox"
+                  className="order-details-page__checkbox-input"
+                  checked={Boolean(form.allowToOpenPackage)}
+                  onChange={(e) => setField("allowToOpenPackage", e.target.checked)}
+                />
+              </label>
               <label className="order-details-page__field order-details-page__field--full">
                 العنوان (السطر الأول)
                 <input
