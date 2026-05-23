@@ -2,7 +2,7 @@ import {
   orderCartProductLines,
   orderCustomer,
   orderDate,
-  orderDisplayId,
+  orderReferenceDisplay,
   orderPhone,
   orderRowKey,
   orderShippingStatus,
@@ -105,7 +105,7 @@ export default function OrdersTable({ orders, onViewDetails, onCopyCustomer }) {
                 className="orders-table__row"
                 title="اضغطي لفتح تفاصيل الطلب"
               >
-                <td>{orderDisplayId(order)}</td>
+                <td>{orderReferenceDisplay(order)}</td>
                 <td>{orderCustomer(order)}</td>
                 <td>{orderPhone(order)}</td>
                 <td>

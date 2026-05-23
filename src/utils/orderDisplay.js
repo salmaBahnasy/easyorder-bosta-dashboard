@@ -38,6 +38,18 @@ export function orderDisplayId(order) {
   return v != null && v !== "" ? v : "—";
 }
 
+/** رقم مرجع الطلب (order_reference / orderReference). */
+export function orderReference(order) {
+  const ref = order?.order_reference ?? order?.orderReference;
+  if (ref != null && String(ref).trim() !== "") return String(ref).trim();
+  return null;
+}
+
+/** للجدول: المرجع إن وُجد وإلا المعرّف المعتاد. */
+export function orderReferenceDisplay(order) {
+  return orderReference(order) ?? orderDisplayId(order);
+}
+
 export function orderCustomer(order) {
   const c = order.customer;
   if (c && typeof c === "object" && c.fullName) {

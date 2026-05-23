@@ -30,12 +30,22 @@ export default function MainLayout() {
           </NavLink>
           <NavLink
             to={appHref("orders")}
+            end
             className={({ isActive }) =>
               `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
             }
           >
             <span className="main-layout__icon">📦</span>
             الطلبات
+          </NavLink>
+          <NavLink
+            to={appHref("orders/additional")}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
+          >
+            <span className="main-layout__icon">➕</span>
+            الطلبات الإضافية
           </NavLink>
           {/* <NavLink
             to={appHref("orders/stats")}

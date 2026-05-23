@@ -71,6 +71,59 @@ export function resolveEmployeeOrderFilterParams(
   return { employee_id: id };
 }
 
+/** `GET /api/{system}/added-orders` */
+export async function getAddedOrders({
+  page = 1,
+  limit = 50,
+  from,
+  to,
+  employee_id,
+  employeeId,
+  product,
+} = {}) {
+  const params = {
+    page,
+    limit,
+    from: toApiQueryDate(from, false),
+    to: toApiQueryDate(to, true),
+    employee_id: employee_id ?? employeeId,
+    product,
+  };
+  const cleaned = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+  const response = await apiClient.get(dashboardApiPath("added-orders"), {
+    params: cleaned,
+  });
+  return response.data;
+}
+
+/** `POST /api/{system}/added-orders` */
+export async function createAddedOrder(payload) {
+  const response = await apiClient.post(
+    dashboardApiPath("added-orders"),
+    payload,
+  );
+  return response.data;
+}
+
+/** `GET /api/{system}/orders/reference/:orderReference?presented=true` */
+export async function getOrderByReference(orderReference, { presented = true } = {}) {
+  const ref = String(orderReference ?? "").trim();
+  if (!ref) {
+    throw new Error("order_reference مطلوب");
+  }
+  const response = await apiClient.get(
+    dashboardApiPath(`orders/reference/${encodeURIComponent(ref)}`),
+    {
+      params: presented ? { presented: "true" } : undefined,
+    },
+  );
+  return response.data;
+}
+
 export async function getOrders({
   page = 1,
   limit = 50,

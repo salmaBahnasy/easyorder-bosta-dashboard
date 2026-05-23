@@ -6,6 +6,7 @@ import EmployeesPage from "./pages/employees/EmployeesPage";
 import LoginPage from "./pages/login/LoginPage";
 import OrderDetailsPage from "./pages/OrderDetailsPage";
 import OrderPayloadDetailsPage from "./pages/orders/OrderPayloadDetailsPage";
+import AdditionalOrdersPage from "./pages/orders/AdditionalOrdersPage";
 import OrdersPage from "./pages/orders/OrdersPage";
 import OrdersStatsPage from "./pages/OrdersStatsPage";
 import CreateProductPage from "./pages/products/CreateProductPage";
@@ -70,6 +71,7 @@ function mainLayoutTree() {
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<HomePage />} />
       <Route path="orders" element={<OrdersPage />} />
+      <Route path="orders/additional" element={<AdditionalOrdersPage />} />
       <Route path="orders/create" element={<CreateOrderPage />} />
       <Route path="orders/stats" element={<OrdersStatsPage />} />
       <Route
