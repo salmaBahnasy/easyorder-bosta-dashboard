@@ -128,12 +128,12 @@ export default function OrdersTable({ orders, onViewDetails }) {
                       {productLines.map((line, lineIdx) => (
                         <li key={`${orderRowKey(order, index)}-p-${lineIdx}`}>
                           <p>{line.name}</p>
-                          {line.quantity != null ? (
+                          {/* {line.quantity != null ? (
                             <span className="orders-table__product-qty">
                               {" "}
                               ×{line.quantity}
                             </span>
-                          ) : null}
+                          ) : null} */}
                         </li>
                       ))}
                     </ul>

@@ -24,46 +24,7 @@ import {
   getProductListLabel,
   normalizeProductList,
 } from "../../utils/ordersFilterProductOptions";
-
-function isoUtcStartOfDay(dateStr) {
-  if (!dateStr || typeof dateStr !== "string") return null;
-  const day = dateStr.slice(0, 10);
-  return `${day}T00:00:00.000Z`;
-}
-
-function isoUtcEndOfDay(dateStr) {
-  if (!dateStr || typeof dateStr !== "string") return null;
-  const day = dateStr.slice(0, 10);
-  return `${day}T23:59:59.999Z`;
-}
-
-function computeDateRangeParams({ dateRange, dateFrom, dateTo }) {
-  const params = {};
-  if (dateFrom && dateTo) {
-    params.from = isoUtcStartOfDay(dateFrom);
-    params.to = isoUtcEndOfDay(dateTo);
-    return params;
-  }
-
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const d = now.getUTCDate();
-  const todayEnd = new Date(Date.UTC(y, m, d, 23, 59, 59, 999)).toISOString();
-
-  if (dateRange === "today") {
-    params.from = new Date(Date.UTC(y, m, d, 0, 0, 0, 0)).toISOString();
-    params.to = todayEnd;
-  } else if (dateRange === "7d") {
-    params.from = new Date(Date.UTC(y, m, d - 6, 0, 0, 0, 0)).toISOString();
-    params.to = todayEnd;
-  } else if (dateRange === "month") {
-    params.from = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0)).toISOString();
-    params.to = todayEnd;
-  }
-
-  return params;
-}
+import { computeEgyptDateRangeParams } from "../../utils/dateRange";
 
 function buildTrendQueryParams({
   dateRange,
@@ -73,7 +34,7 @@ function buildTrendQueryParams({
   employees,
   product_id,
 }) {
-  const params = { ...computeDateRangeParams({ dateRange, dateFrom, dateTo }) };
+  const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
   Object.assign(params, resolveEmployeeOrderFilterParams(employees, employeeId));
   const pid = typeof product_id === "string" ? product_id.trim() : "";
   if (pid) params.product_id = pid;

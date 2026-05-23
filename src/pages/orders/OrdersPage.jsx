@@ -20,7 +20,7 @@ import "./OrdersPage.css";
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
