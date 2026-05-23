@@ -18,7 +18,6 @@ import {
 } from "../../components/dashboard/DashboardCharts";
 import StatCard from "../../components/dashboard/StatCard";
 import "./HomePage.css";
-import { getSelfEmployeeRowsForFilter, isStoredUserAdmin } from "../../utils/auth";
 import {
   getProductFilterId,
   getProductListLabel,
@@ -49,16 +48,6 @@ function normalizeStatsPayload(response) {
   return response?.stats ?? response?.data?.stats ?? response?.data ?? response;
 }
 
-function effectiveEmployeeIdForDashboard(employeeFilter) {
-  const trimmed = String(employeeFilter ?? "").trim();
-  if (trimmed) return trimmed;
-  if (!isStoredUserAdmin()) {
-    const self = getSelfEmployeeRowsForFilter()[0];
-    return self?.id ? String(self.id).trim() : "";
-  }
-  return "";
-}
-
 export default function HomePage() {
   const [trendChart, setTrendChart] = useState(null);
   const [stats, setStats] = useState(null);
@@ -79,7 +68,7 @@ export default function HomePage() {
         dateRange,
         dateFrom,
         dateTo,
-        employeeId: effectiveEmployeeIdForDashboard(employeeFilter),
+        employeeId: String(employeeFilter ?? "").trim(),
         employees,
         product_id: productFilter,
       }),

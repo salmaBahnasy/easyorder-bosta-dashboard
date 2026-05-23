@@ -9,7 +9,6 @@ import {
 import { appHref } from "../../utils/auth";
 import OrdersTable from "../../components/OrdersTable";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
-import { getSelfEmployeeRowsForFilter, isStoredUserAdmin } from "../../utils/auth";
 import {
   getProductFilterId,
   getProductListLabel,
@@ -135,17 +134,13 @@ export default function OrdersPage() {
     try {
       setLoading(true);
 
-      const selfRow = getSelfEmployeeRowsForFilter()[0];
-      const selfId = selfRow?.id ? String(selfRow.id).trim() : "";
-      const effectiveEmployeeId =
-        (nextFilters.employee && String(nextFilters.employee).trim()) ||
-        (!isStoredUserAdmin() && selfId ? selfId : "");
+      const employeeId = String(nextFilters.employee ?? "").trim();
 
       const result = await getOrders({
         page: pageNumber,
         limit,
         status: nextFilters.status || undefined,
-        ...resolveEmployeeOrderFilterParams(employees, effectiveEmployeeId),
+        ...resolveEmployeeOrderFilterParams(employees, employeeId),
         from: nextFilters.from || undefined,
         to: nextFilters.to || undefined,
         order_source: nextFilters.order_source || undefined,
@@ -177,16 +172,14 @@ export default function OrdersPage() {
 
     async function loadEmployees() {
       try {
-        if (!isStoredUserAdmin()) {
-          if (!cancelled) setEmployees(getSelfEmployeeRowsForFilter());
-          return;
-        }
         const result = await getEmployees();
         const list = Array.isArray(result?.data)
           ? result.data
           : Array.isArray(result?.employees)
             ? result.employees
-            : [];
+            : Array.isArray(result)
+              ? result
+              : [];
 
         if (!cancelled) {
           setEmployees(list);
