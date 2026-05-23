@@ -71,7 +71,7 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-export default function OrdersTable({ orders, onViewDetails }) {
+export default function OrdersTable({ orders, onViewDetails, onCopyCustomer }) {
   return (
     <div className="orders-table-wrap">
       <table className="orders-table">
@@ -145,7 +145,19 @@ export default function OrdersTable({ orders, onViewDetails }) {
                 </td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <div className="orders-table__actions">
-                   
+                    {onCopyCustomer ? (
+                      <button
+                        onClick={() => onCopyCustomer(order)}
+                        type="button"
+                        className="orders-table__icon-btn orders-table__icon-btn--copy"
+                        title="نسخ بيانات العميل لطلب جديد"
+                        aria-label="نسخ بيانات العميل لطلب جديد"
+                      >
+                        <span className="orders-table__copy-icon" aria-hidden="true">
+                          ⧉
+                        </span>
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => onViewDetails(order)}
                       type="button"

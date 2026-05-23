@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getBostaCities, getBostaDistricts } from "../api/ordersApi";
 import SearchableSelect from "./SearchableSelect";
 import {
@@ -13,9 +13,18 @@ import {
   normalizeBostaCities,
   normalizeBostaDistricts,
 } from "../utils/bostaLocation";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
+
+function mergeSelectedOption(options, selected, getId, activeValue = "") {
+  if (!selected || !activeValue) return options;
+  const selectedId = getId(selected);
+  if (!selectedId || selectedId !== String(activeValue).trim()) return options;
+  if (options.some((item) => getId(item) === selectedId)) return options;
+  return [selected, ...options];
+}
 
 /**
- * محافظة + منطقة (Bosta) مع بحث — يُستخدم في إنشاء الطلب وتفاصيل الطلب.
+ * محافظة + منطقة (Bosta) مع بحث عبر الـ API — إنشاء الطلب وتفاصيل الطلب.
  */
 export default function BostaCityDistrictFields({
   cityId = "",
@@ -30,18 +39,28 @@ export default function BostaCityDistrictFields({
 }) {
   const [cities, setCities] = useState([]);
   const [citiesLoading, setCitiesLoading] = useState(false);
+  const [citySearch, setCitySearch] = useState("");
+  const [selectedCity, setSelectedCity] = useState(null);
+  const debouncedCitySearch = useDebouncedValue(citySearch, 300);
+
   const [districts, setDistricts] = useState([]);
   const [districtsLoading, setDistrictsLoading] = useState(false);
+  const [districtSearch, setDistrictSearch] = useState("");
+  const [selectedDistrict, setSelectedDistrict] = useState(null);
+  const debouncedDistrictSearch = useDebouncedValue(districtSearch, 300);
+  const activeCityIdRef = useRef("");
+  const districtsFetchSeqRef = useRef(0);
+  const previousCityIdRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
+    const term = String(debouncedCitySearch ?? "").trim();
 
     async function loadCities() {
+      setCitiesLoading(true);
       try {
-        setCitiesLoading(true);
-        const result = await getBostaCities();
-        const list = normalizeBostaCities(result);
-        if (!cancelled) setCities(list);
+        const result = await getBostaCities(term ? { q: term } : {});
+        if (!cancelled) setCities(normalizeBostaCities(result));
       } catch (e) {
         console.log(e);
         if (!cancelled) setCities([]);
@@ -54,43 +73,64 @@ export default function BostaCityDistrictFields({
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    const hint = String(cityNameHint ?? "").trim();
-    if (!hint || citiesLoading || cities.length === 0) return;
-
-    const current = cityId
-      ? cities.find((city) => bostaCityId(city) === String(cityId).trim())
-      : null;
-    if (current) return;
-
-    const match = findBostaCityByName(cities, hint);
-    if (match) {
-      onCityChange?.(bostaCityId(match), match);
-    }
-  }, [cityNameHint, cities, citiesLoading, cityId, onCityChange]);
+  }, [debouncedCitySearch]);
 
   useEffect(() => {
     const id = String(cityId ?? "").trim();
+    activeCityIdRef.current = id;
+    const cityChanged = previousCityIdRef.current !== id;
+    previousCityIdRef.current = id;
+
     if (!id) {
       setDistricts([]);
+      setSelectedDistrict(null);
+      setDistrictSearch("");
+      setDistrictsLoading(false);
       return undefined;
     }
+
+    if (cityChanged) {
+      setDistricts([]);
+      setDistrictSearch("");
+    }
+
+    const fetchSeq = ++districtsFetchSeqRef.current;
+    const term = cityChanged
+      ? ""
+      : String(debouncedDistrictSearch ?? "").trim();
 
     let cancelled = false;
 
     async function loadDistricts() {
+      setDistrictsLoading(true);
       try {
-        setDistrictsLoading(true);
-        const result = await getBostaDistricts(id);
+        const result = await getBostaDistricts(id, term ? { q: term } : {});
         const list = normalizeBostaDistricts(result);
-        if (!cancelled) setDistricts(list);
+        if (
+          cancelled ||
+          fetchSeq !== districtsFetchSeqRef.current ||
+          activeCityIdRef.current !== id
+        ) {
+          return;
+        }
+        setDistricts(list);
       } catch (e) {
         console.log(e);
-        if (!cancelled) setDistricts([]);
+        if (
+          !cancelled &&
+          fetchSeq === districtsFetchSeqRef.current &&
+          activeCityIdRef.current === id
+        ) {
+          setDistricts([]);
+        }
       } finally {
-        if (!cancelled) setDistrictsLoading(false);
+        if (
+          !cancelled &&
+          fetchSeq === districtsFetchSeqRef.current &&
+          activeCityIdRef.current === id
+        ) {
+          setDistrictsLoading(false);
+        }
       }
     }
 
@@ -98,35 +138,120 @@ export default function BostaCityDistrictFields({
     return () => {
       cancelled = true;
     };
-  }, [cityId]);
+  }, [cityId, debouncedDistrictSearch]);
+
+  useEffect(() => {
+    if (!cityId) {
+      setSelectedCity(null);
+      return;
+    }
+    const found = cities.find((city) => bostaCityId(city) === String(cityId).trim());
+    if (found) setSelectedCity(found);
+  }, [cityId, cities]);
+
+  useEffect(() => {
+    if (!districtId) {
+      setSelectedDistrict(null);
+      return;
+    }
+    const found = districts.find(
+      (district) => bostaDistrictId(district) === String(districtId).trim(),
+    );
+    if (found) {
+      setSelectedDistrict(found);
+      return;
+    }
+    if (!districtsLoading && districts.length > 0) {
+      setSelectedDistrict(null);
+    }
+  }, [districtId, districts, districtsLoading]);
+
+  useEffect(() => {
+    const hint = String(cityNameHint ?? "").trim();
+    if (!hint || cityId) return;
+
+    let cancelled = false;
+
+    async function matchCityFromHint() {
+      try {
+        const result = await getBostaCities({ q: hint });
+        const list = normalizeBostaCities(result);
+        if (cancelled || list.length === 0) return;
+        const match = findBostaCityByName(list, hint);
+        if (match) {
+          setSelectedCity(match);
+          onCityChange?.(bostaCityId(match), match);
+        }
+      } catch (e) {
+        console.log(e);
+      }
+    }
+
+    matchCityFromHint();
+    return () => {
+      cancelled = true;
+    };
+  }, [cityNameHint, cityId, onCityChange]);
 
   useEffect(() => {
     const hint = String(districtNameHint ?? "").trim();
-    if (!hint || !cityId || districtsLoading || districts.length === 0) return;
+    const id = String(cityId ?? "").trim();
+    if (!hint || !id || districtId) return;
 
-    const current = districtId
-      ? districts.find(
-          (district) => bostaDistrictId(district) === String(districtId).trim(),
-        )
-      : null;
-    if (current) return;
+    let cancelled = false;
 
-    const match = findBostaDistrictByName(districts, hint);
-    if (match) {
-      onDistrictChange?.(bostaDistrictId(match));
+    async function matchDistrictFromHint() {
+      try {
+        const result = await getBostaDistricts(id, { q: hint });
+        const list = normalizeBostaDistricts(result);
+        if (cancelled || list.length === 0) return;
+        const match = findBostaDistrictByName(list, hint);
+        if (match) {
+          setSelectedDistrict(match);
+          onDistrictChange?.(bostaDistrictId(match));
+        }
+      } catch (e) {
+        console.log(e);
+      }
     }
-  }, [
-    districtNameHint,
-    districts,
-    districtsLoading,
-    cityId,
-    districtId,
-    onDistrictChange,
-  ]);
+
+    matchDistrictFromHint();
+    return () => {
+      cancelled = true;
+    };
+  }, [districtNameHint, cityId, districtId, onDistrictChange]);
+
+  const cityOptions = useMemo(
+    () => mergeSelectedOption(cities, selectedCity, bostaCityId, cityId),
+    [cities, selectedCity, cityId],
+  );
+
+  const districtOptions = useMemo(
+    () =>
+      mergeSelectedOption(
+        districts,
+        selectedDistrict,
+        bostaDistrictId,
+        districtId,
+      ),
+    [districts, selectedDistrict, districtId],
+  );
 
   function handleCitySelect(nextCityId, cityOption) {
+    activeCityIdRef.current = String(nextCityId ?? "").trim();
+    districtsFetchSeqRef.current += 1;
+    setSelectedCity(cityOption ?? null);
+    setDistricts([]);
+    setSelectedDistrict(null);
+    setDistrictSearch("");
+    setDistrictsLoading(Boolean(nextCityId));
     onCityChange?.(nextCityId, cityOption);
     onDistrictChange?.("");
+  }
+
+  function handleDistrictSelect(nextDistrictId, districtOption) {
+    setSelectedDistrict(districtOption ?? null);
+    onDistrictChange?.(nextDistrictId);
   }
 
   return (
@@ -136,7 +261,7 @@ export default function BostaCityDistrictFields({
         <SearchableSelect
           value={cityId}
           onChange={handleCitySelect}
-          options={cities}
+          options={cityOptions}
           getOptionValue={bostaCityId}
           getOptionLabel={bostaCityLabel}
           getOptionSearchText={bostaCitySearchText}
@@ -145,14 +270,16 @@ export default function BostaCityDistrictFields({
           loading={citiesLoading}
           loadingText="جاري تحميل المحافظات..."
           emptyText="لا توجد محافظة مطابقة"
+          serverSideSearch
+          onSearchChange={setCitySearch}
         />
       </label>
       <label className="order-details-page__field">
         {districtLabel}
         <SearchableSelect
           value={districtId}
-          onChange={(nextDistrictId) => onDistrictChange?.(nextDistrictId)}
-          options={districts}
+          onChange={handleDistrictSelect}
+          options={districtOptions}
           getOptionValue={bostaDistrictId}
           getOptionLabel={bostaDistrictLabel}
           getOptionSearchText={bostaDistrictSearchText}
@@ -162,6 +289,8 @@ export default function BostaCityDistrictFields({
           loading={districtsLoading}
           loadingText="جاري تحميل المناطق..."
           emptyText="لا توجد منطقة مطابقة"
+          serverSideSearch
+          onSearchChange={setDistrictSearch}
         />
       </label>
     </div>

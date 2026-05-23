@@ -154,6 +154,7 @@ export default function OrdersPage() {
         shipping_status: nextFilters.shipping_status || undefined,
         product_id: nextFilters.product_id?.trim() || undefined,
         phone: nextFilters.phone?.trim() || undefined,
+        customer_name: nextFilters.customer_name?.trim() || undefined,
       });
 
       const { list, page, total, totalPages } = parseOrdersResponse(result);
@@ -280,6 +281,14 @@ export default function OrdersPage() {
     });
   }
 
+  function handleCopyCustomer(order) {
+    const ordersListState = { filters, page };
+    writeOrdersListState(ordersListState);
+    navigate(appHref("orders/create"), {
+      state: { copyFromOrder: order, ordersListState },
+    });
+  }
+
   const employeeOptions = useMemo(() => {
     const mapped = employees
       .map((employee) => ({
@@ -314,7 +323,10 @@ export default function OrdersPage() {
   const filteredOrders = useMemo(() => orders, [orders]);
 
   const hasLocalFilters = Boolean(
-    filters.status || filters.employee || filters.phone?.trim(),
+    filters.status ||
+      filters.employee ||
+      filters.customer_name?.trim() ||
+      filters.phone?.trim(),
   );
 
   const summaryStats = useMemo(() => {
@@ -398,13 +410,25 @@ export default function OrdersPage() {
         </label>
 
         <label className="orders-page__field">
+          اسم العميل
+          <input
+            className="orders-page__input"
+            type="search"
+            autoComplete="off"
+            placeholder="اسم العميل"
+            value={filters.customer_name}
+            onChange={(e) => handleFilterChange("customer_name", e.target.value)}
+          />
+        </label>
+
+        <label className="orders-page__field">
           تليفون العميل
           <input
             className="orders-page__input"
             type="tel"
             inputMode="tel"
             autoComplete="off"
-            placeholder="مثال: 01554942702"
+            placeholder="رقم التليفون"
             value={filters.phone}
             onChange={(e) => handleFilterChange("phone", e.target.value)}
           />
@@ -542,7 +566,11 @@ export default function OrdersPage() {
       ) : (
         <>
         
-          <OrdersTable orders={filteredOrders} onViewDetails={handleViewDetails} />
+          <OrdersTable
+            orders={filteredOrders}
+            onViewDetails={handleViewDetails}
+            onCopyCustomer={handleCopyCustomer}
+          />
 
           <div className="orders-page__pagination">
             <button

@@ -4,6 +4,7 @@ export function getDefaultOrdersFilters() {
   return {
     status: "",
     employee: "",
+    customer_name: "",
     phone: "",
     from: "",
     to: "",

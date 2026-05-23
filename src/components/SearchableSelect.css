@@ -53,31 +53,90 @@
   left: 0;
   background: #fff;
   border: 1px solid #d8deec;
-  border-radius: 10px;
-  box-shadow: 0 12px 28px rgba(18, 34, 84, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 14px 32px rgba(18, 34, 84, 0.14);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.searchable-select__panel--fixed {
+  position: fixed;
+  right: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.searchable-select__search-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e8ecf4;
+}
+
+.searchable-select__search-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
+}
+
+.searchable-select__search-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .searchable-select__search {
-  width: 100%;
-  border: none;
-  border-bottom: 1px solid #e8ecf4;
-  border-radius: 0;
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid #d8deec;
+  border-radius: 8px;
+  background: #fff;
   box-shadow: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1e293b;
+  text-align: right;
+}
+
+.searchable-select__search::placeholder {
+  color: #94a3b8;
 }
 
 .searchable-select__search:focus {
-  border-color: #e8ecf4;
-  box-shadow: none;
   outline: none;
-  border-bottom-color: #5b6fb6;
+  border-color: #5b6fb6;
+  box-shadow: 0 0 0 3px rgba(91, 111, 182, 0.15);
+}
+
+.searchable-select__search::-webkit-search-cancel-button {
+  cursor: pointer;
 }
 
 .searchable-select__list {
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 6px;
   max-height: min(240px, 40vh);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.searchable-select__panel--fixed .searchable-select__list {
+  max-height: none;
   overflow-y: auto;
 }
 
@@ -86,12 +145,15 @@
   width: 100%;
   padding: 10px 12px;
   border: none;
+  border-radius: 8px;
   background: transparent;
   text-align: right;
   font-family: inherit;
   font-size: 14px;
   color: #1e293b;
   cursor: pointer;
+  white-space: normal;
+  line-height: 1.45;
 }
 
 .searchable-select__option:hover,
@@ -107,7 +169,7 @@
 }
 
 .searchable-select__empty {
-  padding: 12px;
+  padding: 14px 12px;
   text-align: center;
   color: #64748b;
   font-size: 13px;

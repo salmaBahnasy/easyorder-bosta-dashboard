@@ -78,6 +78,11 @@ export async function getOrders({
   employee_id,
   employeeId,
   phone,
+  customer_name,
+  customerName,
+  full_name,
+  fullName,
+  name,
   from,
   to,
   order_source,
@@ -91,12 +96,22 @@ export async function getOrders({
   const employee = employee_id ?? employeeId;
   const product = product_id ?? productId;
   const sku = product_sku ?? productSku;
+  const customerNameQuery = [
+    customer_name,
+    customerName,
+    full_name,
+    fullName,
+    name,
+  ]
+    .map((v) => String(v ?? "").trim())
+    .find(Boolean);
   const params = {
     page,
     limit,
     status,
     employee_id: employee,
     phone,
+    customer_name: customerNameQuery,
     from: toApiQueryDate(from, false),
     to: toApiQueryDate(to, true),
     order_source,
@@ -137,18 +152,27 @@ export async function getZones() {
   return response.data;
 }
 
-/** Bosta cities list — `GET /api/{system}/bosta/cities` */
-export async function getBostaCities() {
-  const response = await apiClient.get(dashboardApiPath("bosta/cities"));
+function buildBostaSearchParams({ q, search, name } = {}) {
+  const term = String(q ?? search ?? name ?? "").trim();
+  if (!term) return {};
+  return { q: term };
+}
+
+/** Bosta cities — `GET /api/{system}/bosta/cities?q=...` */
+export async function getBostaCities(searchParams = {}) {
+  const response = await apiClient.get(dashboardApiPath("bosta/cities"), {
+    params: buildBostaSearchParams(searchParams),
+  });
   return response.data;
 }
 
-/** Bosta districts for a city — `GET /api/{system}/bosta/cities/:cityId/districts` */
-export async function getBostaDistricts(cityId) {
+/** Bosta districts — `GET /api/{system}/bosta/cities/:cityId/districts?q=...` */
+export async function getBostaDistricts(cityId, searchParams = {}) {
   const id = String(cityId ?? "").trim();
   if (!id) return { data: [] };
   const response = await apiClient.get(
     dashboardApiPath(`bosta/cities/${encodeURIComponent(id)}/districts`),
+    { params: buildBostaSearchParams(searchParams) },
   );
   return response.data;
 }

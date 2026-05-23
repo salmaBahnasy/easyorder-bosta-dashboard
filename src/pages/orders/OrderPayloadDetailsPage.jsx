@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getProducts, updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import { updateOrder, updateOrderStatus } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
+import CartProductSelect from "../../components/CartProductSelect";
+import FeedbackModal from "../../components/FeedbackModal";
+import { useProductCatalog } from "../../hooks/useProductCatalog";
 import { appHref } from "../../utils/auth";
 import {
   bostaCityLabel,
@@ -9,8 +12,6 @@ import {
   parseDistrictHintFromAddress,
 } from "../../utils/bostaLocation";
 import {
-  cartRowSelectValue,
-  catalogProductDisplayName,
   createEmptyCartRow,
   parseProductRawData,
   productOptionId,
@@ -25,7 +26,6 @@ import {
   orderPhone,
 } from "../../utils/orderDisplay";
 import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
-import { normalizeProductListFromApi } from "../../utils/normalizeProductListFromApi";
 import "./OrderPayloadDetailsPage.css";
 
 function cartRowFromOrderItem(item, idx) {
@@ -172,8 +172,8 @@ export default function OrderPayloadDetailsPage() {
   const ordersListState = location.state?.ordersListState ?? null;
 
   const [cartItems, setCartItems] = useState([]);
-  const [catalogProducts, setCatalogProducts] = useState([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
+  const { catalogProducts, catalogLoading, onCatalogSearchChange } =
+    useProductCatalog(cartItems);
   const [form, setForm] = useState({
     orderAlias: "",
     firstLine: "",
@@ -193,32 +193,14 @@ export default function OrderPayloadDetailsPage() {
   });
   const [selectedStatus, setSelectedStatus] = useState("");
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState({
+    open: false,
+    variant: "success",
+    message: "",
+  });
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadCatalog() {
-      try {
-        setCatalogLoading(true);
-        const data = await getProducts({ page: 1, limit: 100 });
-        const list = normalizeProductListFromApi(data);
-        if (!cancelled) setCatalogProducts(list);
-      } catch (e) {
-        console.log(e);
-        if (!cancelled) setCatalogProducts([]);
-      } finally {
-        if (!cancelled) setCatalogLoading(false);
-      }
-    }
-
-    loadCatalog();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!order) return;
@@ -585,11 +567,19 @@ export default function OrderPayloadDetailsPage() {
     try {
       setSavingOrder(true);
       await updateOrder(orderIdForStatusUpdate, payload);
-      alert("تم حفظ تعديلات الطلب بنجاح");
+      setFeedbackModal({
+        open: true,
+        variant: "success",
+        message: "تم حفظ تعديلات الطلب بنجاح",
+      });
     } catch (error) {
       console.log(error);
       const message = error?.response?.data?.message ?? "تعذر حفظ التعديلات";
-      alert(message);
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message,
+      });
     } finally {
       setSavingOrder(false);
     }
@@ -779,36 +769,15 @@ export default function OrderPayloadDetailsPage() {
                     {cartItems.map((row) => (
                       <tr key={row.key}>
                         <td>
-                          <select
-                            className="order-details-page__input order-details-page__input--table order-details-page__cart-product-select"
-                            value={cartRowSelectValue(row, catalogProducts)}
-                            onChange={(e) =>
-                              handleRowCatalogSelect(row.key, e.target.value)
+                          <CartProductSelect
+                            row={row}
+                            catalogProducts={catalogProducts}
+                            catalogLoading={catalogLoading}
+                            onSearchChange={onCatalogSearchChange}
+                            onSelect={(optionId) =>
+                              handleRowCatalogSelect(row.key, optionId)
                             }
-                            disabled={catalogLoading || catalogProducts.length === 0}
-                          >
-                            <option value="">
-                              {catalogProducts.length === 0
-                                ? "لا توجد منتجات"
-                                : "— اختر منتجاً —"}
-                            </option>
-                            {catalogProducts.map((p, idx) => {
-                              const oid = productOptionId(p, idx);
-                              const u = unwrapCatalogProduct(p);
-                              const rd = parseProductRawData(u);
-                              const title = catalogProductDisplayName(p, idx);
-                              const sku = String(u?.sku ?? rd.sku ?? "");
-                              const priceNum = Number(u?.price ?? rd.price ?? 0) || 0;
-                              const label = sku
-                                ? `${title} (${sku}) — ${formatMoney(priceNum)} ج`
-                                : `${title} — ${formatMoney(priceNum)} ج`;
-                              return (
-                                <option key={oid} value={oid}>
-                                  {label}
-                                </option>
-                              );
-                            })}
-                          </select>
+                          />
                         </td>
                         <td>
                           <input
@@ -1033,6 +1002,15 @@ export default function OrderPayloadDetailsPage() {
           </div>
         </aside>
       </div>
+      <FeedbackModal
+        open={feedbackModal.open}
+        variant={feedbackModal.variant}
+        message={feedbackModal.message}
+        onClose={() =>
+          setFeedbackModal((prev) => ({ ...prev, open: false }))
+        }
+      />
+
       {isConfirmModalOpen && (
         <div
           style={{

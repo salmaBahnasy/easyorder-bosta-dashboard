@@ -1,0 +1,76 @@
+.feedback-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.feedback-modal {
+  width: min(400px, 100%);
+  padding: 28px 24px 22px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+  text-align: center;
+  direction: rtl;
+}
+
+.feedback-modal__icon {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+}
+
+.feedback-modal__icon--success {
+  color: #16a085;
+}
+
+.feedback-modal__icon--error {
+  color: #e74c3c;
+}
+
+.feedback-modal__title {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.feedback-modal__message {
+  margin: 0 0 22px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #64748b;
+  white-space: pre-line;
+}
+
+.feedback-modal__btn {
+  min-width: 120px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.feedback-modal__btn:hover {
+  opacity: 0.92;
+}
+
+.feedback-modal--success .feedback-modal__btn {
+  background: #16a085;
+  color: #fff;
+}
+
+.feedback-modal--error .feedback-modal__btn {
+  background: #e74c3c;
+  color: #fff;
+}

@@ -135,3 +135,14 @@
   border-color: #5b6fb6;
   color: #5b6fb6;
 }
+
+.orders-table__icon-btn--copy .orders-table__copy-icon {
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.orders-table__icon-btn--copy:hover {
+  border-color: #16a085;
+  color: #16a085;
+}

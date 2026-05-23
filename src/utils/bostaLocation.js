@@ -9,6 +9,8 @@ export function normalizeBostaCities(payload) {
 
 export function normalizeBostaDistricts(payload) {
   if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.list)) return payload.data.list;
+  if (Array.isArray(payload?.list)) return payload.list;
   if (Array.isArray(payload)) return payload;
   return [];
 }
@@ -19,14 +21,18 @@ export function bostaCityLabel(city) {
 }
 
 export function bostaDistrictLabel(district) {
-  const label = String(
-    district?.districtOtherName ??
-      district?.districtName ??
-      district?.zoneOtherName ??
-      district?.zoneName ??
-      "",
-  ).trim();
-  return label || "—";
+  const zoneAr = String(district?.zoneOtherName ?? "").trim();
+  const zoneEn = String(district?.zoneName ?? "").trim();
+  const districtAr = String(district?.districtOtherName ?? "").trim();
+  const districtEn = String(district?.districtName ?? "").trim();
+
+  if (zoneAr && districtAr) return `${zoneAr} — ${districtAr}`;
+  if (zoneAr && districtEn) return `${zoneAr} — ${districtEn}`;
+  if (zoneAr) return zoneAr;
+  if (districtAr) return districtAr;
+  if (districtEn) return districtEn;
+  if (zoneEn) return zoneEn;
+  return "—";
 }
 
 export function bostaCityId(city) {
