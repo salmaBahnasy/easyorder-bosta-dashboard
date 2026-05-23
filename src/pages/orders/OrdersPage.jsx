@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   getEmployees,
@@ -14,11 +14,27 @@ import {
   getProductListLabel,
   normalizeProductList,
 } from "../../utils/ordersFilterProductOptions";
+import {
+  clearOrdersListState,
+  getDefaultOrdersFilters,
+  readOrdersListState,
+  writeOrdersListState,
+} from "../../utils/ordersListState";
 import "./OrdersPage.css";
 
 export default function OrdersPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const restoredListStateRef = useRef(null);
+  if (restoredListStateRef.current === null) {
+    restoredListStateRef.current =
+      location.state?.ordersListState ?? readOrdersListState();
+  }
+
   const [orders, setOrders] = useState([]);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(
+    () => restoredListStateRef.current?.page ?? 1,
+  );
   const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -26,19 +42,9 @@ export default function OrdersPage() {
   const [employees, setEmployees] = useState([]);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    status: "",
-    employee: "",
-    phone: "",
-    from: "",
-    to: "",
-    order_source: "",
-    order_type: "",
-    shipping_status: "",
-    product_id: "",
-  });
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [filters, setFilters] = useState(
+    () => restoredListStateRef.current?.filters ?? getDefaultOrdersFilters(),
+  );
 
   const statusOptions = [
     { value: "", label: "كل الحالات" },
@@ -151,10 +157,12 @@ export default function OrdersPage() {
       });
 
       const { list, page, total, totalPages } = parseOrdersResponse(result);
+      const resolvedPage = page ?? pageNumber;
       setOrders(list);
-      setPage(page ?? pageNumber);
+      setPage(resolvedPage);
       setTotal(total ?? list.length);
       setTotalPages(totalPages ?? 1);
+      writeOrdersListState({ filters: nextFilters, page: resolvedPage });
     } catch (error) {
       console.log(error);
       alert("حصل خطأ أثناء تحميل الطلبات");
@@ -164,7 +172,11 @@ export default function OrdersPage() {
   }
 
   useEffect(() => {
-    fetchOrders(1);
+    if (location.state?.ordersListState) {
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    const restored = restoredListStateRef.current;
+    fetchOrders(restored?.page ?? 1, restored?.filters ?? getDefaultOrdersFilters());
   }, []);
 
   useEffect(() => {
@@ -254,24 +266,17 @@ export default function OrdersPage() {
   }
 
   function clearFilters() {
-    const clearedFilters = {
-      status: "",
-      employee: "",
-      phone: "",
-      from: "",
-      to: "",
-      order_source: "",
-      order_type: "",
-      shipping_status: "",
-      product_id: "",
-    };
+    const clearedFilters = getDefaultOrdersFilters();
     setFilters(clearedFilters);
+    clearOrdersListState();
     fetchOrders(1, clearedFilters);
   }
 
   function handleViewDetails(order) {
+    const ordersListState = { filters, page };
+    writeOrdersListState(ordersListState);
     navigate(appHref("orders/payload-details"), {
-      state: { returnTo: location.pathname, order },
+      state: { returnTo: location.pathname, order, ordersListState },
     });
   }
 

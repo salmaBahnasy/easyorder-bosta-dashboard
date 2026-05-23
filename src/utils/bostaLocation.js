@@ -1,3 +1,5 @@
+import { arabicSearchMatches, normalizeArabicSearchText } from "./arabicSearch";
+
 export function normalizeBostaCities(payload) {
   const list = payload?.data?.list;
   if (Array.isArray(list)) return list;
@@ -56,4 +58,99 @@ export function bostaDistrictSearchText(district) {
   ]
     .filter((v) => v != null && String(v).trim() !== "")
     .join(" ");
+}
+
+/** محافظة الطلب من EasyOrder (مثلاً government: "الاقصر") */
+export function getOrderGovernmentName(order) {
+  return String(
+    order?.government ?? order?.city ?? order?.governorate ?? order?.cityName ?? "",
+  ).trim();
+}
+
+function governmentNamesMatch(a, b) {
+  const left = normalizeArabicSearchText(a);
+  const right = normalizeArabicSearchText(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.includes(right) || right.includes(left);
+}
+
+/**
+ * يطابق اسم محافظة من الطلب مع عنصر في قائمة Bosta (مثلاً "الاقصر" → "الأقصر").
+ */
+export function findBostaCityByName(cities, nameHint) {
+  const hint = String(nameHint ?? "").trim();
+  if (!hint || !Array.isArray(cities) || cities.length === 0) return null;
+
+  const exact = cities.find((city) =>
+    governmentNamesMatch(hint, bostaCityLabel(city)),
+  );
+  if (exact) return exact;
+
+  const searchHits = cities.filter((city) =>
+    arabicSearchMatches(bostaCitySearchText(city), hint),
+  );
+  if (searchHits.length === 1) return searchHits[0];
+
+  if (searchHits.length > 1) {
+    const best = searchHits.find((city) =>
+      governmentNamesMatch(hint, bostaCityLabel(city)),
+    );
+    if (best) return best;
+    return searchHits[0];
+  }
+
+  const normalizedHint = normalizeArabicSearchText(hint);
+  return (
+    cities.find((city) => {
+      const label = normalizeArabicSearchText(bostaCityLabel(city));
+      return (
+        label.includes(normalizedHint) ||
+        normalizedHint.includes(label)
+      );
+    }) ?? null
+  );
+}
+
+export function findBostaDistrictByName(districts, nameHint) {
+  const hint = String(nameHint ?? "").trim();
+  if (!hint || !Array.isArray(districts) || districts.length === 0) return null;
+
+  const exact = districts.find((district) =>
+    governmentNamesMatch(hint, bostaDistrictLabel(district)),
+  );
+  if (exact) return exact;
+
+  const searchHits = districts.filter((district) =>
+    arabicSearchMatches(bostaDistrictSearchText(district), hint),
+  );
+  if (searchHits.length === 1) return searchHits[0];
+  if (searchHits.length > 1) {
+    const best = searchHits.find((district) =>
+      governmentNamesMatch(hint, bostaDistrictLabel(district)),
+    );
+    return best ?? searchHits[0];
+  }
+
+  return null;
+}
+
+/** يستخرج جزء المنطقة من عنوان الطلب (بعد اسم المحافظة). */
+export function parseDistrictHintFromAddress(address, governmentName) {
+  const raw = String(address ?? "").trim();
+  if (!raw) return "";
+
+  const parts = raw
+    .split(/[-–—,،]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return "";
+
+  const gov = normalizeArabicSearchText(governmentName);
+  let start = 0;
+  if (gov && governmentNamesMatch(parts[0], governmentName)) {
+    start = 1;
+  }
+
+  return parts[start] ?? "";
 }

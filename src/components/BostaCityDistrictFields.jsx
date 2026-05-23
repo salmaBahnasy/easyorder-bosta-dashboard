@@ -8,6 +8,8 @@ import {
   bostaDistrictId,
   bostaDistrictLabel,
   bostaDistrictSearchText,
+  findBostaCityByName,
+  findBostaDistrictByName,
   normalizeBostaCities,
   normalizeBostaDistricts,
 } from "../utils/bostaLocation";
@@ -18,6 +20,8 @@ import {
 export default function BostaCityDistrictFields({
   cityId = "",
   districtId = "",
+  cityNameHint = "",
+  districtNameHint = "",
   onCityChange,
   onDistrictChange,
   rowClassName = "order-details-page__fields-row order-details-page__fields-row--duo",
@@ -53,6 +57,21 @@ export default function BostaCityDistrictFields({
   }, []);
 
   useEffect(() => {
+    const hint = String(cityNameHint ?? "").trim();
+    if (!hint || citiesLoading || cities.length === 0) return;
+
+    const current = cityId
+      ? cities.find((city) => bostaCityId(city) === String(cityId).trim())
+      : null;
+    if (current) return;
+
+    const match = findBostaCityByName(cities, hint);
+    if (match) {
+      onCityChange?.(bostaCityId(match), match);
+    }
+  }, [cityNameHint, cities, citiesLoading, cityId, onCityChange]);
+
+  useEffect(() => {
     const id = String(cityId ?? "").trim();
     if (!id) {
       setDistricts([]);
@@ -80,6 +99,30 @@ export default function BostaCityDistrictFields({
       cancelled = true;
     };
   }, [cityId]);
+
+  useEffect(() => {
+    const hint = String(districtNameHint ?? "").trim();
+    if (!hint || !cityId || districtsLoading || districts.length === 0) return;
+
+    const current = districtId
+      ? districts.find(
+          (district) => bostaDistrictId(district) === String(districtId).trim(),
+        )
+      : null;
+    if (current) return;
+
+    const match = findBostaDistrictByName(districts, hint);
+    if (match) {
+      onDistrictChange?.(bostaDistrictId(match));
+    }
+  }, [
+    districtNameHint,
+    districts,
+    districtsLoading,
+    cityId,
+    districtId,
+    onDistrictChange,
+  ]);
 
   function handleCitySelect(nextCityId, cityOption) {
     onCityChange?.(nextCityId, cityOption);

@@ -3,7 +3,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { getProducts, updateOrder, updateOrderStatus } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import { appHref } from "../../utils/auth";
-import { bostaCityLabel } from "../../utils/bostaLocation";
+import {
+  bostaCityLabel,
+  getOrderGovernmentName,
+  parseDistrictHintFromAddress,
+} from "../../utils/bostaLocation";
 import {
   cartRowSelectValue,
   catalogProductDisplayName,
@@ -165,6 +169,7 @@ export default function OrderPayloadDetailsPage() {
   const location = useLocation();
   const returnTo = location.state?.returnTo ?? appHref("orders");
   const order = location.state?.order ?? null;
+  const ordersListState = location.state?.ordersListState ?? null;
 
   const [cartItems, setCartItems] = useState([]);
   const [catalogProducts, setCatalogProducts] = useState([]);
@@ -176,7 +181,7 @@ export default function OrderPayloadDetailsPage() {
     cityId: "",
     districtId: "",
     note: "",
-    allowToOpenPackage: false,
+    allowToOpenPackage: true,
     firstName: "",
     mobile: "",
     type: "FORWARD",
@@ -233,7 +238,7 @@ export default function OrderPayloadDetailsPage() {
         orderAddress(order) !== "—"
           ? orderAddress(order)
           : "102 street mohamed abd el shafy, alexandria",
-      cityName: order.city ?? "",
+      cityName: getOrderGovernmentName(order),
       note: order.note ?? "deliver note",
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
@@ -326,7 +331,9 @@ export default function OrderPayloadDetailsPage() {
   }
 
   function handleBack() {
-    navigate(returnTo);
+    navigate(returnTo, {
+      state: ordersListState ? { ordersListState } : undefined,
+    });
   }
 
   const orderIdForStatusUpdate =
@@ -924,6 +931,11 @@ export default function OrderPayloadDetailsPage() {
               <BostaCityDistrictFields
                 cityId={form.cityId}
                 districtId={form.districtId}
+                cityNameHint={form.cityName}
+                districtNameHint={parseDistrictHintFromAddress(
+                  orderAddress(order) !== "—" ? orderAddress(order) : form.firstLine,
+                  form.cityName,
+                )}
                 onCityChange={(cityId, cityOption) =>
                   setForm((prev) => ({
                     ...prev,
