@@ -221,7 +221,7 @@ export default function OrderPayloadDetailsPage() {
           ? orderAddress(order)
           : "102 street mohamed abd el shafy, alexandria",
       cityName: getOrderGovernmentName(order),
-      note: order.note ?? "deliver note",
+      note: String(order.note ?? order.notes ?? "").trim(),
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
       shipping_cost: String(
@@ -555,12 +555,14 @@ export default function OrderPayloadDetailsPage() {
       full_name: form.firstName,
       phone: form.mobile,
       cityName: form.cityName,
+      address: form.firstLine,
       status: backendStatus,
       cart_items: cartPayload,
       shipping_cost: parseNonNegativeMoney(form.shipping_cost),
       payment_method: form.payment_method,
       order_source: form.order_source,
       order_type: form.order_type,
+      note: String(form.note ?? "").trim(),
       ...(showShipFields ? { shipping_status: form.shipping_status } : {}),
     };
 
@@ -930,6 +932,16 @@ export default function OrderPayloadDetailsPage() {
                   className="order-details-page__input"
                   value={form.firstLine}
                   onChange={(e) => setField("firstLine", e.target.value)}
+                />
+              </label>
+              <label className="order-details-page__field order-details-page__field--full">
+                ملاحظات
+                <textarea
+                  className="order-details-page__input order-details-page__note"
+                  value={form.note}
+                  onChange={(e) => setField("note", e.target.value)}
+                  placeholder="ملاحظات على الطلب (اختياري)"
+                  rows={3}
                 />
               </label>
             </div>

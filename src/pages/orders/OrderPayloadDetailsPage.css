@@ -310,6 +310,15 @@
   border-color: #d8deec;
 }
 
+.order-details-page__note {
+  min-height: 88px;
+  height: auto;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 .order-details-page__actions-bar {
   display: flex;
   flex-direction: row;

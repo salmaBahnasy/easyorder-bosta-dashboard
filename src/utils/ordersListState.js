@@ -34,24 +34,26 @@ export function readOrdersListState() {
       merged.from = defaults.from;
       merged.to = defaults.to;
     }
+    const focusedOrderId = String(parsed.focusedOrderId ?? "").trim();
     return {
       filters: merged,
       page: Number(parsed.page) > 0 ? Number(parsed.page) : 1,
+      focusedOrderId: focusedOrderId || null,
     };
   } catch {
     return null;
   }
 }
 
-export function writeOrdersListState({ filters, page }) {
+export function writeOrdersListState({ filters, page, focusedOrderId }) {
   try {
-    sessionStorage.setItem(
-      storageKey(),
-      JSON.stringify({
-        filters: { ...getDefaultOrdersFilters(), ...filters },
-        page: Number(page) > 0 ? Number(page) : 1,
-      }),
-    );
+    const payload = {
+      filters: { ...getDefaultOrdersFilters(), ...filters },
+      page: Number(page) > 0 ? Number(page) : 1,
+    };
+    const focusId = String(focusedOrderId ?? "").trim();
+    if (focusId) payload.focusedOrderId = focusId;
+    sessionStorage.setItem(storageKey(), JSON.stringify(payload));
   } catch {
     // ignore quota / private mode
   }
@@ -70,8 +72,10 @@ export function clearOrdersListState() {
  * Fresh visit → today's date + page 1. Return from details → keep saved filters/page.
  */
 export function resolveOrdersListBootState(locationState) {
-  const fromDetails = Boolean(locationState?.ordersListState);
+  const fromNavigationState = Boolean(locationState?.ordersListState);
   const stored = locationState?.ordersListState ?? readOrdersListState();
+  const fromDetails =
+    fromNavigationState || Boolean(stored?.focusedOrderId);
   const today = egyptTodayYmd();
   const defaults = getDefaultOrdersFilters();
 
@@ -85,5 +89,8 @@ export function resolveOrdersListBootState(locationState) {
     filters = { ...filters, from: today, to: today };
   }
 
-  return { filters, page, fromDetails };
+  const focusedOrderId =
+    fromDetails && stored?.focusedOrderId ? stored.focusedOrderId : null;
+
+  return { filters, page, fromDetails, focusedOrderId };
 }

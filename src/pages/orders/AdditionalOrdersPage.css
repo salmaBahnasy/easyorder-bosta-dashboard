@@ -198,7 +198,22 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 980px;
+  min-width: 1080px;
+}
+
+.additional-orders-table__employee-cell {
+  white-space: nowrap;
+  min-width: 100px;
+}
+
+.additional-orders-table__employee-name {
+  font-weight: 600;
+  color: #334155;
+}
+
+.additional-orders-table__employee-name--muted {
+  font-weight: 400;
+  color: #94a3b8;
 }
 
 .additional-orders-table thead th {

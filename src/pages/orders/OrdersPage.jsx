@@ -8,6 +8,7 @@ import {
 } from "../../api/ordersApi";
 import { appHref } from "../../utils/auth";
 import OrdersTable from "../../components/OrdersTable";
+import { orderRowKey } from "../../utils/orderDisplay";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
 import {
   getProductFilterId,
@@ -40,6 +41,9 @@ export default function OrdersPage() {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [filters, setFilters] = useState(() => bootStateRef.current.filters);
+  const [highlightOrderId, setHighlightOrderId] = useState(
+    () => bootStateRef.current.focusedOrderId ?? null,
+  );
 
   const statusOptions = [
     { value: "", label: "كل الحالات" },
@@ -176,6 +180,12 @@ export default function OrdersPage() {
   }, []);
 
   useEffect(() => {
+    if (!highlightOrderId || loading) return undefined;
+    const timer = window.setTimeout(() => setHighlightOrderId(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [highlightOrderId, loading, orders]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadEmployees() {
@@ -268,8 +278,9 @@ export default function OrdersPage() {
     fetchOrders(1, clearedFilters);
   }
 
-  function handleViewDetails(order) {
-    const ordersListState = { filters, page };
+  function handleViewDetails(order, rowIndex) {
+    const focusedOrderId = orderRowKey(order, rowIndex);
+    const ordersListState = { filters, page, focusedOrderId };
     writeOrdersListState(ordersListState);
     navigate(appHref("orders/payload-details"), {
       state: { returnTo: location.pathname, order, ordersListState },
@@ -563,6 +574,7 @@ export default function OrdersPage() {
         
           <OrdersTable
             orders={filteredOrders}
+            highlightOrderId={highlightOrderId}
             onViewDetails={handleViewDetails}
             onCopyCustomer={handleCopyCustomer}
           />

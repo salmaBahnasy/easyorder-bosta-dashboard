@@ -617,6 +617,7 @@ export default function CreateOrderPage() {
                   className="order-details-page__input create-order-page__note"
                   value={form.note}
                   onChange={(e) => setField("note", e.target.value)}
+                  placeholder="ملاحظات على الطلب (اختياري)"
                   rows={3}
                 />
               </label>

@@ -476,7 +476,7 @@ export default function AdditionalOrdersPage() {
   const displayRows = [...draftRows, ...rows];
   const isBusy = listLoading || searchLoading;
 
-  function renderTableRow(row, { allowRemoveDraft = false }) {
+  function renderTableRow(row, { allowRemoveDraft = false } = {}) {
     const tone = getAdditionalOrderRowTone(row.order);
     const isSaving = savingKey === row.key;
     const total =
@@ -518,6 +518,17 @@ export default function AdditionalOrdersPage() {
               row.saved ? undefined : updateDraftRow(row.key, { phone: e.target.value })
             }
           />
+        </td>
+        <td className="additional-orders-table__employee-cell">
+          {row.saved ? (
+            <span className="additional-orders-table__employee-name">
+              {row.addedByName || "—"}
+            </span>
+          ) : (
+            <span className="additional-orders-table__employee-name additional-orders-table__employee-name--muted">
+              —
+            </span>
+          )}
         </td>
         <td className="additional-orders-table__products-cell">
           <AddedProductsCell
@@ -677,6 +688,7 @@ export default function AdditionalOrdersPage() {
                   <th>المرجع</th>
                   <th>اسم العميل</th>
                   <th>رقم التليفون</th>
+                  <th>الموظف</th>
                   <th>المنتجات المضافة</th>
                   <th>الإجمالي</th>
                   <th>الحالة</th>

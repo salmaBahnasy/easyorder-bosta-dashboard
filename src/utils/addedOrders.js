@@ -110,6 +110,36 @@ export function validateAddedOrderRow(row) {
   return errors;
 }
 
+function pickText(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text && text !== "—") return text;
+  }
+  return "";
+}
+
+/** اسم الموظف الذي سجّل الطلب الإضافي (`addedBy` من الـ API). */
+export function resolveAddedByDisplayName(record) {
+  if (!record || typeof record !== "object") return "";
+
+  const by = record.addedBy ?? record.added_by ?? null;
+  if (by && typeof by === "object") {
+    return pickText(by.name, by.full_name, by.email);
+  }
+
+  const emp = record.employee;
+  if (emp && typeof emp === "object") {
+    return pickText(emp.name, emp.full_name, emp.email);
+  }
+
+  return pickText(
+    record.addedByName,
+    record.added_by_name,
+    record.employeeName,
+    record.employee_name,
+  );
+}
+
 export function mapAddedOrderRecordToRow(record, index = 0) {
   const products = normalizeAddedProducts(record?.products);
   const ref =
@@ -127,6 +157,7 @@ export function mapAddedOrderRecordToRow(record, index = 0) {
     order: record?.order ?? record,
     customerName: String(record?.customerName ?? ""),
     phone: String(record?.phone ?? ""),
+    addedByName: resolveAddedByDisplayName(record),
     products,
     totalCost: Number(record?.totalCost) || computeAddedProductsTotal(products),
   };

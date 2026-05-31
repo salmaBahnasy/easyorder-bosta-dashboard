@@ -264,3 +264,18 @@ export function orderShippingStatus(order) {
 export function orderDetailRouteId(order) {
   return order.id ?? order["Order ID"] ?? order.shortId ?? order.short_id;
 }
+
+/** نص ملاحظة الطلب إن وُجدت. */
+export function orderNote(order) {
+  const raw =
+    order?.note ??
+    order?.notes ??
+    order?.delivery_note ??
+    order?.deliveryNote;
+  return String(raw ?? "").trim();
+}
+
+/** هل الطلب عليه ملاحظة غير فارغة؟ */
+export function orderHasNote(order) {
+  return orderNote(order) !== "";
+}

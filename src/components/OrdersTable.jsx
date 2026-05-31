@@ -1,7 +1,10 @@
+import { useEffect, useRef } from "react";
 import {
   orderCartProductLines,
   orderCustomer,
   orderDate,
+  orderHasNote,
+  orderNote,
   orderReferenceDisplay,
   orderPhone,
   orderRowKey,
@@ -71,7 +74,22 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-export default function OrdersTable({ orders, onViewDetails, onCopyCustomer }) {
+export default function OrdersTable({
+  orders,
+  onViewDetails,
+  onCopyCustomer,
+  highlightOrderId,
+}) {
+  const highlightRowRef = useRef(null);
+
+  useEffect(() => {
+    if (!highlightOrderId || !highlightRowRef.current) return;
+    highlightRowRef.current.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+  }, [highlightOrderId, orders]);
+
   return (
     <div className="orders-table-wrap">
       <table className="orders-table">
@@ -93,19 +111,39 @@ export default function OrdersTable({ orders, onViewDetails, onCopyCustomer }) {
 
         <tbody>
           {orders.map((order, index) => {
+            const rowKey = orderRowKey(order, index);
             const productLines = orderCartProductLines(order);
             const statusView = getStatusPresentation(orderStatus(order));
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
             const showShippingWithStatus = isShippedOrderStatus(order) && shipLabel;
+            const isHighlighted =
+              highlightOrderId && rowKey === highlightOrderId;
             return (
               <tr
-                key={orderRowKey(order, index)}
-                onClick={() => onViewDetails(order)}
-                className="orders-table__row"
+                key={rowKey}
+                ref={isHighlighted ? highlightRowRef : null}
+                onClick={() => onViewDetails(order, index)}
+                className={
+                  isHighlighted
+                    ? "orders-table__row orders-table__row--highlighted"
+                    : "orders-table__row"
+                }
                 title="اضغطي لفتح تفاصيل الطلب"
               >
-                <td>{orderReferenceDisplay(order)}</td>
+                <td>
+                  <div className="orders-table__ref-cell">
+                    <span>{orderReferenceDisplay(order)}</span>
+                    {orderHasNote(order) ? (
+                      <span
+                        className="orders-table__badge orders-table__badge--note"
+                        title={orderNote(order)}
+                      >
+                        ملاحظة
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
                 <td>{orderCustomer(order)}</td>
                 <td>{orderPhone(order)}</td>
                 <td>
@@ -159,7 +197,7 @@ export default function OrdersTable({ orders, onViewDetails, onCopyCustomer }) {
                       </button>
                     ) : null}
                     <button
-                      onClick={() => onViewDetails(order)}
+                      onClick={() => onViewDetails(order, index)}
                       type="button"
                       className="orders-table__icon-btn"
                       title="تعديل الطلب"
