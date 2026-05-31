@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getEmployees,
+  getOrderCosts,
   getOrdersStats,
   getOrdersStatsTrend,
+  getProductSalesChart,
   getProducts,
   resolveEmployeeOrderFilterParams,
 } from "../../api/ordersApi";
+import OrderCostsSection from "../../components/dashboard/OrderCostsSection";
 import {
   buildDonutSegments,
   ORDER_SOURCE_DONUT_DEFS,
@@ -13,10 +16,12 @@ import {
   ORDER_TYPE_DONUT_DEFS,
   OrdersDonutCard,
   OrdersTrendLineChart,
+  ProductSalesLineChart,
   SHIPPING_STATUS_DONUT_DEFS,
   TREND_METRIC_DEFS,
 } from "../../components/dashboard/DashboardCharts";
 import StatCard from "../../components/dashboard/StatCard";
+import DashboardStatsSkeleton from "../../components/dashboard/DashboardStatsSkeleton";
 import "./HomePage.css";
 import {
   getProductFilterId,
@@ -44,15 +49,63 @@ function normalizeTrendChart(response) {
   return response?.chart ?? response?.data?.chart ?? null;
 }
 
+function normalizeProductSalesChart(response) {
+  return response?.chart ?? response?.data?.chart ?? null;
+}
+
 function normalizeStatsPayload(response) {
   return response?.stats ?? response?.data?.stats ?? response?.data ?? response;
 }
 
+function buildProductSalesQueryParams({ dateRange, dateFrom, dateTo, granularity }) {
+  const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
+  const g = String(granularity ?? "day").trim();
+  if (g) params.granularity = g;
+  return params;
+}
+
+function buildOrderCostsQueryParams({ expense, dateFrom, dateTo }) {
+  const expenseNum = Number(expense);
+  const params = { expense: expenseNum };
+  const from = String(dateFrom ?? "").trim();
+  const to = String(dateTo ?? "").trim();
+
+  if (from && to && from === to) {
+    params.date = from;
+  } else if (from && to) {
+    Object.assign(params, computeEgyptDateRangeParams({ dateFrom: from, dateTo: to }));
+  } else if (from) {
+    params.date = from;
+  } else if (to) {
+    params.date = to;
+  }
+
+  return params;
+}
+
+function normalizeOrderCostsMetrics(response) {
+  return response?.metrics ?? response?.data?.metrics ?? null;
+}
+
+function formatCostsPeriodHint(dateFrom, dateTo) {
+  const from = String(dateFrom ?? "").trim();
+  const to = String(dateTo ?? "").trim();
+  if (from && to && from === to) return `يوم ${from}`;
+  if (from && to) return `من ${from} إلى ${to}`;
+  if (from) return `من ${from}`;
+  if (to) return `حتى ${to}`;
+  return "الشهر الحالي (افتراضي)";
+}
+
 export default function HomePage() {
   const [trendChart, setTrendChart] = useState(null);
+  const [productSalesChart, setProductSalesChart] = useState(null);
   const [stats, setStats] = useState(null);
   const [loadingTrend, setLoadingTrend] = useState(true);
   const [chartMetric, setChartMetric] = useState("totalOrders");
+  const [productSalesProductId, setProductSalesProductId] = useState("");
+  const [productSalesMetric, setProductSalesMetric] = useState("totalUnits");
+  const [productSalesGranularity, setProductSalesGranularity] = useState("day");
   const [dateRange] = useState("7d");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -61,6 +114,10 @@ export default function HomePage() {
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productFilter, setProductFilter] = useState("");
+  const [orderCostsExpense, setOrderCostsExpense] = useState("");
+  const [orderCostsMetrics, setOrderCostsMetrics] = useState(null);
+  const [orderCostsLoading, setOrderCostsLoading] = useState(false);
+  const [orderCostsError, setOrderCostsError] = useState("");
 
   const buildDashboardQuery = useCallback(
     () =>
@@ -75,17 +132,63 @@ export default function HomePage() {
     [dateRange, dateFrom, dateTo, employeeFilter, employees, productFilter],
   );
 
+  const buildProductSalesQuery = useCallback(
+    () =>
+      buildProductSalesQueryParams({
+        dateRange,
+        dateFrom,
+        dateTo,
+        granularity: productSalesGranularity,
+      }),
+    [dateRange, dateFrom, dateTo, productSalesGranularity],
+  );
+
   const fetchDashboardData = useCallback(async () => {
     const query = buildDashboardQuery();
-    const [trendRes, statsRes] = await Promise.all([
+    const productSalesQuery = buildProductSalesQuery();
+    const [trendRes, statsRes, productSalesRes] = await Promise.all([
       getOrdersStatsTrend(query),
       getOrdersStats(query),
+      getProductSalesChart(productSalesQuery),
     ]);
     return {
       chart: normalizeTrendChart(trendRes),
       stats: normalizeStatsPayload(statsRes) ?? {},
+      productSales: normalizeProductSalesChart(productSalesRes),
     };
-  }, [buildDashboardQuery]);
+  }, [buildDashboardQuery, buildProductSalesQuery]);
+
+  const fetchOrderCostsData = useCallback(async (expenseValue = orderCostsExpense) => {
+    const expenseNum = Number(expenseValue);
+    if (!Number.isFinite(expenseNum) || expenseNum < 0 || String(expenseValue ?? "").trim() === "") {
+      setOrderCostsError("أدخلي المصروفات (رقم ≥ 0)");
+      setOrderCostsMetrics(null);
+      return null;
+    }
+
+    const query = buildOrderCostsQueryParams({
+      expense: expenseNum,
+      dateFrom,
+      dateTo,
+    });
+
+    setOrderCostsLoading(true);
+    setOrderCostsError("");
+    try {
+      const response = await getOrderCosts(query);
+      const metrics = normalizeOrderCostsMetrics(response);
+      setOrderCostsMetrics(metrics);
+      return metrics;
+    } catch (error) {
+      console.log(error);
+      setOrderCostsMetrics(null);
+      const message = error?.response?.data?.message ?? "تعذر حساب تكلفة الطلبات";
+      setOrderCostsError(message);
+      return null;
+    } finally {
+      setOrderCostsLoading(false);
+    }
+  }, [orderCostsExpense, dateFrom, dateTo]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,16 +260,25 @@ export default function HomePage() {
     (async () => {
       try {
         setLoadingTrend(true);
-        const { chart, stats: statsPayload } = await fetchDashboardData();
+        const { chart, stats: statsPayload, productSales } = await fetchDashboardData();
         if (!cancelled) {
           setTrendChart(chart);
           setStats(statsPayload);
+          setProductSalesChart(productSales);
+          const products = Array.isArray(productSales?.products) ? productSales.products : [];
+          setProductSalesProductId((current) => {
+            if (products.length === 0) return "";
+            if (products.some((p) => p.product_id === current)) return current;
+            return products[0].product_id;
+          });
         }
       } catch (error) {
         console.log(error);
         if (!cancelled) {
           setTrendChart(null);
           setStats(null);
+          setProductSalesChart(null);
+          setProductSalesProductId("");
         }
       } finally {
         if (!cancelled) setLoadingTrend(false);
@@ -181,13 +293,25 @@ export default function HomePage() {
   async function handleRefreshStats() {
     try {
       setLoadingTrend(true);
-      const { chart, stats: statsPayload } = await fetchDashboardData();
+      const { chart, stats: statsPayload, productSales } = await fetchDashboardData();
       setTrendChart(chart);
       setStats(statsPayload);
+      setProductSalesChart(productSales);
+      const products = Array.isArray(productSales?.products) ? productSales.products : [];
+      setProductSalesProductId((current) => {
+        if (products.length === 0) return "";
+        if (products.some((p) => p.product_id === current)) return current;
+        return products[0].product_id;
+      });
+      if (String(orderCostsExpense ?? "").trim() !== "") {
+        await fetchOrderCostsData(orderCostsExpense);
+      }
     } catch (error) {
       console.log(error);
       setTrendChart(null);
       setStats(null);
+      setProductSalesChart(null);
+      setProductSalesProductId("");
     } finally {
       setLoadingTrend(false);
     }
@@ -195,6 +319,7 @@ export default function HomePage() {
 
   const summary = trendChart?.summary ?? {};
   const trendPoints = trendChart?.points ?? [];
+  const productSalesProducts = productSalesChart?.products ?? [];
   const periodHint = "ملخص الفترة المحددة";
 
   const kpiCards = useMemo(
@@ -225,6 +350,11 @@ export default function HomePage() {
   const orderTypeSegments = useMemo(
     () => buildDonutSegments(ORDER_TYPE_DONUT_DEFS, stats?.byOrderType),
     [stats?.byOrderType],
+  );
+
+  const orderCostsPeriodHint = useMemo(
+    () => formatCostsPeriodHint(dateFrom, dateTo),
+    [dateFrom, dateTo],
   );
 
   return (
@@ -294,9 +424,9 @@ export default function HomePage() {
       </section>
 
       {loadingTrend ? (
-        <p>جاري تحميل الإحصائيات...</p>
-      ) : !trendChart && !stats ? (
-        <p>تعذر تحميل الإحصائيات حاليًا.</p>
+        <DashboardStatsSkeleton />
+      ) : !trendChart && !stats && !productSalesChart ? (
+        <p className="dashboard-load-error">تعذر تحميل الإحصائيات حاليًا.</p>
       ) : (
         <>
           {trendChart ? (
@@ -314,14 +444,41 @@ export default function HomePage() {
                 ))}
               </section>
 
-              <section className="dashboard-charts-row dashboard-charts-row--trend">
-                <OrdersTrendLineChart
-                  points={trendPoints}
-                  metricKey={chartMetric}
-                  onMetricChange={setChartMetric}
-                />
+              <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+                {trendChart ? (
+                  <OrdersTrendLineChart
+                    points={trendPoints}
+                    metricKey={chartMetric}
+                    onMetricChange={setChartMetric}
+                  />
+                ) : null}
+                {productSalesChart ? (
+                  <ProductSalesLineChart
+                    products={productSalesProducts}
+                    selectedProductId={productSalesProductId}
+                    onProductChange={setProductSalesProductId}
+                    metricKey={productSalesMetric}
+                    onMetricChange={setProductSalesMetric}
+                    granularity={productSalesGranularity}
+                    onGranularityChange={setProductSalesGranularity}
+                    truncated={Boolean(productSalesChart?.truncated)}
+                  />
+                ) : null}
               </section>
             </>
+          ) : productSalesChart ? (
+            <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+              <ProductSalesLineChart
+                products={productSalesProducts}
+                selectedProductId={productSalesProductId}
+                onProductChange={setProductSalesProductId}
+                metricKey={productSalesMetric}
+                onMetricChange={setProductSalesMetric}
+                granularity={productSalesGranularity}
+                onGranularityChange={setProductSalesGranularity}
+                truncated={Boolean(productSalesChart?.truncated)}
+              />
+            </section>
           ) : null}
 
           {stats ? (
@@ -350,6 +507,20 @@ export default function HomePage() {
           ) : null}
         </>
       )}
+
+      <OrderCostsSection
+        expense={orderCostsExpense}
+        onExpenseChange={(value) => {
+          setOrderCostsExpense(value);
+          if (orderCostsError) setOrderCostsError("");
+        }}
+        onCalculate={() => fetchOrderCostsData()}
+        loading={orderCostsLoading}
+        error={orderCostsError}
+        metrics={orderCostsMetrics}
+        successfulShippingStatus={orderCostsMetrics?.successfulShippingStatus}
+        periodHint={orderCostsPeriodHint}
+      />
     </div>
   );
 }

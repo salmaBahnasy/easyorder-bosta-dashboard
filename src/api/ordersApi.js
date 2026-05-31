@@ -1,5 +1,5 @@
 import axios from "axios";
-import { toApiQueryDate, normalizeApiDateParams } from "../utils/dateRange";
+import { toApiQueryDate, normalizeApiDateParams, normalizeDateInput } from "../utils/dateRange";
 import { getOrderAuditFields } from "../utils/orderAudit";
 import { getDashboardApiPrefix } from "../utils/auth";
 
@@ -266,6 +266,29 @@ export async function getOrdersStats(params = {}) {
 /** Orders trend + summary KPIs — `GET /api/{system}/orders/stats/trend` */
 export async function getOrdersStatsTrend(params = {}) {
   const response = await apiClient.get(dashboardApiPath("orders/stats/trend"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Product sales chart — `GET /api/{system}/charts/product-sales` */
+export async function getProductSalesChart(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("charts/product-sales"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Order cost metrics — `GET /api/{system}/costs` */
+export async function getOrderCosts({ expense, date, from, to } = {}) {
+  const params = { expense: Number(expense) };
+  if (date != null && String(date).trim() !== "") {
+    params.date = normalizeDateInput(date) || String(date).trim();
+  } else {
+    if (from != null && String(from).trim() !== "") params.from = from;
+    if (to != null && String(to).trim() !== "") params.to = to;
+  }
+  const response = await apiClient.get(dashboardApiPath("costs"), {
     params: cleanApiParams(params),
   });
   return response.data;

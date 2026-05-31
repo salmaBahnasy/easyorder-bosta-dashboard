@@ -236,6 +236,204 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
   );
 }
 
+export const PRODUCT_SALES_METRIC_DEFS = [
+  {
+    key: "totalUnits",
+    title: "القطع المباعة",
+    accent: "#0ea5e9",
+    formatSummary: (v) => Math.round(Number(v ?? 0)).toLocaleString("ar-EG"),
+    formatTooltip: (v) => [
+      Math.round(Number(v ?? 0)).toLocaleString("ar-EG"),
+      "القطع المباعة",
+    ],
+  },
+  {
+    key: "totalRevenue",
+    title: "الإيراد",
+    accent: "#eab308",
+    formatSummary: (v) =>
+      `${Math.round(Number(v ?? 0)).toLocaleString("ar-EG")} ج.م`,
+    formatTooltip: (v) => [
+      `${Math.round(Number(v ?? 0)).toLocaleString("ar-EG")} ج.م`,
+      "الإيراد",
+    ],
+  },
+];
+
+export function ProductSalesLineChart({
+  products,
+  selectedProductId,
+  onProductChange,
+  metricKey,
+  onMetricChange,
+  granularity,
+  onGranularityChange,
+  truncated,
+}) {
+  const metric =
+    PRODUCT_SALES_METRIC_DEFS.find((m) => m.key === metricKey) ??
+    PRODUCT_SALES_METRIC_DEFS[0];
+
+  const productList = Array.isArray(products) ? products : [];
+
+  const selectedProduct = useMemo(() => {
+    if (!productList.length) return null;
+    if (selectedProductId) {
+      const match = productList.find((p) => p.product_id === selectedProductId);
+      if (match) return match;
+    }
+    return productList[0];
+  }, [productList, selectedProductId]);
+
+  const chartData = useMemo(() => {
+    const points = Array.isArray(selectedProduct?.points) ? selectedProduct.points : [];
+    return points.map((p) => {
+      const raw = p?.[metric.key];
+      return {
+        date: p?.date,
+        dateLabel: formatTrendAxisDate(p?.date),
+        value: raw == null || raw === "" ? null : Number(raw),
+      };
+    });
+  }, [selectedProduct, metric.key]);
+
+  const xTickInterval = useMemo(() => {
+    const n = chartData.length;
+    const maxTicks = 8;
+    if (n <= maxTicks) return 0;
+    return Math.max(0, Math.ceil(n / maxTicks) - 1);
+  }, [chartData.length]);
+
+  const summary = selectedProduct?.summary ?? {};
+
+  return (
+    <section className="dashboard-chart-card dashboard-chart-card--panel dashboard-trend-chart dashboard-product-sales-chart">
+      <header className="dashboard-chart-card__header dashboard-trend-chart__header">
+        <div>
+          <h3>مبيعات المنتجات</h3>
+          <p>تطور مبيعات المنتج خلال الفترة المحددة</p>
+        </div>
+        <div className="dashboard-product-sales-chart__controls">
+          <label className="dashboard-trend-chart__metric-select">
+            <span>المنتج</span>
+            <select
+              value={selectedProduct?.product_id ?? ""}
+              onChange={(e) => onProductChange(e.target.value)}
+              disabled={productList.length === 0}
+              aria-label="اختيار المنتج"
+            >
+              {productList.length === 0 ? (
+                <option value="">لا توجد منتجات</option>
+              ) : (
+                productList.map((product) => (
+                  <option key={product.product_id} value={product.product_id}>
+                    {product.name}
+                    {product.sku ? ` (${product.sku})` : ""} —{" "}
+                    {Math.round(Number(product.summary?.totalUnits ?? 0)).toLocaleString("ar-EG")}{" "}
+                    قطعة
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <label className="dashboard-trend-chart__metric-select">
+            <span>المؤشر</span>
+            <select
+              value={metric.key}
+              onChange={(e) => onMetricChange(e.target.value)}
+              aria-label="اختيار مؤشر مبيعات المنتج"
+            >
+              {PRODUCT_SALES_METRIC_DEFS.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          </label>
+         
+        </div>
+      </header>
+
+      {selectedProduct ? (
+        <div className="dashboard-product-sales-chart__summary">
+          <span>
+            الطلبات:{" "}
+            <strong>{Number(summary.totalOrders ?? 0).toLocaleString("ar-EG")}</strong>
+          </span>
+          <span>
+            القطع:{" "}
+            <strong>{Math.round(Number(summary.totalUnits ?? 0)).toLocaleString("ar-EG")}</strong>
+          </span>
+          <span>
+            الإيراد:{" "}
+            <strong>
+              {Math.round(Number(summary.totalRevenue ?? 0)).toLocaleString("ar-EG")} ج.م
+            </strong>
+          </span>
+        </div>
+      ) : null}
+
+      <div className="dashboard-recharts-wrap dashboard-trend-chart__wrap">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={chartData}
+            margin={{ top: 16, right: 20, left: 4, bottom: 52 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e8edf5" />
+            <XAxis
+              dataKey="dateLabel"
+              tick={TrendXAxisTick}
+              interval={xTickInterval}
+              minTickGap={28}
+              height={52}
+              axisLine={{ stroke: "#cbd5e1" }}
+              tickLine={{ stroke: "#cbd5e1" }}
+            />
+            <YAxis
+              tick={{ fontSize: 12, fill: "#475569", fontWeight: 600 }}
+              tickFormatter={formatTrendYAxisTick}
+              width={52}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              formatter={(v) => metric.formatTooltip(v)}
+              labelFormatter={(_l, payload) => {
+                const row = payload?.[0]?.payload;
+                return row?.date ? formatTrendTooltipDate(row.date) : "";
+              }}
+              contentStyle={{
+                borderRadius: 10,
+                border: "1px solid #e2e8f0",
+                fontFamily: '"Cairo", "Segoe UI", Tahoma, sans-serif',
+                direction: "rtl",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={metric.accent}
+              strokeWidth={2.5}
+              dot={{ r: 3, fill: metric.accent }}
+              activeDot={{ r: 5 }}
+              connectNulls={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {chartData.length === 0 ? (
+        <p className="dashboard-donut-empty-hint">لا توجد نقاط للفترة المحددة.</p>
+      ) : null}
+      {truncated ? (
+        <p className="dashboard-donut-empty-hint">
+          تم عرض جزء من المنتجات فقط — اختاري منتجاً محدداً لعرض تفاصيله.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function firstBucketValue(obj, keys) {
   if (!obj || typeof obj !== "object") return 0;
   const lowerMap = {};

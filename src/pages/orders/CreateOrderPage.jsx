@@ -272,18 +272,9 @@ export default function CreateOrderPage() {
     const { linesForPayload, phoneDigits } = validation;
 
     const uiStatus = selectedOrderStatus || "جديد";
-    let backendStatus = backendStatusMap[uiStatus] ?? "new";
-    let shippingStatusForApi;
-
-    if (uiStatus === "تم الشحن") {
-      backendStatus = backendStatusMap["تم الشحن"];
-      shippingStatusForApi = form.shipping_status;
-    } else if (uiStatus === "تم التأكيد" && form.shipping_status === "in_progress") {
-      backendStatus = backendStatusMap["تم الشحن"];
-      shippingStatusForApi = "in_progress";
-    } else if (uiStatus === "تم التأكيد" && form.shipping_status) {
-      shippingStatusForApi = form.shipping_status;
-    }
+    const backendStatus = backendStatusMap[uiStatus] ?? "new";
+    const shippingStatusForApi =
+      uiStatus === "تم الشحن" ? form.shipping_status : undefined;
 
     const linesWithProductIds = linesForPayload.map((row) => {
       if (row.catalogProductId != null || row.catalogProductKey) return row;
