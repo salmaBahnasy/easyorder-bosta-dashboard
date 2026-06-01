@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getEmployees,
   getOrderCostChart,
+  saveOrderCostDay,
   getOrdersStats,
   getOrdersStatsTrend,
   getProductSalesChart,
@@ -16,6 +17,7 @@ import {
   ORDER_TYPE_DONUT_DEFS,
   OrdersDonutCard,
   OrdersTrendLineChart,
+  ProductOrdersDonutCard,
   ProductSalesLineChart,
   SHIPPING_STATUS_DONUT_DEFS,
   TREND_METRIC_DEFS,
@@ -28,7 +30,11 @@ import {
   getProductListLabel,
   normalizeProductList,
 } from "../../utils/ordersFilterProductOptions";
-import { computeEgyptDateRangeParams } from "../../utils/dateRange";
+import {
+  computeEgyptDateRangeParams,
+  egyptTodayYmd,
+  filterPointsUpToToday,
+} from "../../utils/dateRange";
 
 function buildTrendQueryParams({
   dateRange,
@@ -46,11 +52,24 @@ function buildTrendQueryParams({
 }
 
 function normalizeTrendChart(response) {
-  return response?.chart ?? response?.data?.chart ?? null;
+  const chart = response?.chart ?? response?.data?.chart ?? null;
+  if (!chart) return null;
+  return {
+    ...chart,
+    points: filterPointsUpToToday(chart.points),
+  };
 }
 
 function normalizeProductSalesChart(response) {
-  return response?.chart ?? response?.data?.chart ?? null;
+  const chart = response?.chart ?? response?.data?.chart ?? null;
+  if (!chart) return null;
+  const products = Array.isArray(chart.products)
+    ? chart.products.map((p) => ({
+        ...p,
+        points: filterPointsUpToToday(p.points),
+      }))
+    : chart.products;
+  return { ...chart, products };
 }
 
 function normalizeStatsPayload(response) {
@@ -64,47 +83,15 @@ function buildProductSalesQueryParams({ dateRange, dateFrom, dateTo, granularity
   return params;
 }
 
-function buildOrderCostsQueryParams({
-  expense,
-  dateFrom,
-  dateTo,
-  granularity,
-  dateRange,
-  date_basis = "created",
-}) {
-  const params = {};
-  const expenseStr = String(expense ?? "").trim();
-  if (expenseStr !== "") {
-    const expenseNum = Number(expenseStr);
-    if (Number.isFinite(expenseNum) && expenseNum >= 0) {
-      params.expense = expenseNum;
-    }
-  }
-
+/** GET chart: from/to + date_basis. بدون from/to → الـ API يستخدم آخر 30 يوم. */
+function buildOrderCostChartRangeQuery({ dateFrom, dateTo, date_basis = "created" }) {
   const from = String(dateFrom ?? "").trim();
   const to = String(dateTo ?? "").trim();
-
-  if (from && to && from === to) {
-    params.date = from;
-  } else if (from && to) {
+  const basis = String(date_basis ?? "created").trim() || "created";
+  const params = { date_basis: basis };
+  if (from && to) {
     Object.assign(params, computeEgyptDateRangeParams({ dateFrom: from, dateTo: to }));
-  } else if (from) {
-    params.date = from;
-  } else if (to) {
-    params.date = to;
-  } else {
-    Object.assign(
-      params,
-      computeEgyptDateRangeParams({ dateRange: dateRange ?? "7d", dateFrom, dateTo }),
-    );
   }
-
-  const g = String(granularity ?? "").trim();
-  if (g) params.granularity = g;
-
-  const basis = String(date_basis ?? "created").trim();
-  if (basis) params.date_basis = basis;
-
   return params;
 }
 
@@ -125,30 +112,37 @@ function normalizeOrderCostChart(response) {
   const raw = response?.chart ?? response?.data?.chart ?? null;
   if (!raw) return null;
 
-  const points = Array.isArray(raw.points)
-    ? raw.points.map((p) => ({
-        date: p.date,
-        orders: normalizeCostMetricBlock(p.orders),
-        shipped: normalizeCostMetricBlock(p.shipped),
-        delivered: normalizeCostMetricBlock(p.delivered ?? p.successful),
-      }))
-    : [];
+  const points = filterPointsUpToToday(
+    Array.isArray(raw.points)
+      ? raw.points.map((p) => ({
+          date: p.date,
+          expense: p.expense,
+          expenseEntered: Boolean(p.expenseEntered ?? p.expense_entered),
+          orders: normalizeCostMetricBlock(p.orders),
+          shipped: normalizeCostMetricBlock(p.shipped),
+          delivered: normalizeCostMetricBlock(p.delivered ?? p.successful),
+        }))
+      : [],
+  );
 
   return {
+    source: raw.source,
+    dateBasis: raw.dateBasis ?? raw.date_basis,
+    liveFilledDaysCount:
+      raw.liveFilledDaysCount ?? raw.live_filled_days_count ?? 0,
     expense: raw.expense,
     expenseEntered: raw.expenseEntered ?? raw.expense_entered,
     formulaAr: raw.formulaAr ?? raw.formula_ar,
-    dateBasis: raw.dateBasis ?? raw.date_basis,
-    countsAllOrderStatuses:
-      raw.countsAllOrderStatuses ?? raw.counts_all_order_statuses,
     points,
-    summary: {
-      orders: normalizeCostMetricBlock(raw.summary?.orders),
-      shipped: normalizeCostMetricBlock(raw.summary?.shipped),
-      delivered: normalizeCostMetricBlock(
-        raw.summary?.delivered ?? raw.summary?.successful,
-      ),
-    },
+    summary: raw.summary
+      ? {
+          orders: normalizeCostMetricBlock(raw.summary?.orders),
+          shipped: normalizeCostMetricBlock(raw.summary?.shipped),
+          delivered: normalizeCostMetricBlock(
+            raw.summary?.delivered ?? raw.summary?.successful,
+          ),
+        }
+      : null,
   };
 }
 
@@ -170,11 +164,13 @@ export default function HomePage() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [productFilter, setProductFilter] = useState("");
   const [orderCostsExpense, setOrderCostsExpense] = useState("");
+  const [orderCostsSaveDate, setOrderCostsSaveDate] = useState(() => egyptTodayYmd());
   const [orderCostsError, setOrderCostsError] = useState("");
+  const [orderCostsSuccess, setOrderCostsSuccess] = useState("");
+  const [orderCostsSaving, setOrderCostsSaving] = useState(false);
   const [orderCostChart, setOrderCostChart] = useState(null);
   const [orderCostChartLoading, setOrderCostChartLoading] = useState(false);
   const [orderCostSeries, setOrderCostSeries] = useState("orders");
-  const [orderCostGranularity, setOrderCostGranularity] = useState("day");
   const [orderCostDateBasis, setOrderCostDateBasis] = useState("created");
 
   const buildDashboardQuery = useCallback(
@@ -216,13 +212,10 @@ export default function HomePage() {
     };
   }, [buildDashboardQuery, buildProductSalesQuery]);
 
-  const fetchOrderCostChart = useCallback(async (expenseValue = orderCostsExpense) => {
-    const query = buildOrderCostsQueryParams({
-      expense: expenseValue,
+  const fetchOrderCostChart = useCallback(async () => {
+    const query = buildOrderCostChartRangeQuery({
       dateFrom,
       dateTo,
-      granularity: orderCostGranularity,
-      dateRange,
       date_basis: orderCostDateBasis,
     });
 
@@ -239,7 +232,41 @@ export default function HomePage() {
     } finally {
       setOrderCostChartLoading(false);
     }
-  }, [orderCostsExpense, dateFrom, dateTo, orderCostGranularity, orderCostDateBasis, dateRange]);
+  }, [dateFrom, dateTo, orderCostDateBasis]);
+
+  const saveOrderCostDayEntry = useCallback(async () => {
+    const day = String(orderCostsSaveDate ?? "").trim();
+    const expenseNum = Number(orderCostsExpense);
+    if (!day) {
+      setOrderCostsError("اختاري تاريخ اليوم");
+      setOrderCostsSuccess("");
+      return;
+    }
+    if (!Number.isFinite(expenseNum) || expenseNum < 0 || String(orderCostsExpense ?? "").trim() === "") {
+      setOrderCostsError("أدخلي المصروفات (رقم ≥ 0)");
+      setOrderCostsSuccess("");
+      return;
+    }
+
+    setOrderCostsSaving(true);
+    setOrderCostsError("");
+    setOrderCostsSuccess("");
+    try {
+      await saveOrderCostDay({
+        date: day,
+        expense: expenseNum,
+        date_basis: orderCostDateBasis,
+      });
+      setOrderCostsSuccess(`تم حفظ مصروفات يوم ${day} بنجاح`);
+      await fetchOrderCostChart();
+    } catch (error) {
+      console.log(error);
+      const message = error?.response?.data?.message ?? "تعذر حفظ مصروفات اليوم";
+      setOrderCostsError(message);
+    } finally {
+      setOrderCostsSaving(false);
+    }
+  }, [orderCostsSaveDate, orderCostsExpense, orderCostDateBasis, fetchOrderCostChart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -358,7 +385,7 @@ export default function HomePage() {
         if (products.some((p) => p.product_id === current)) return current;
         return products[0].product_id;
       });
-      await fetchOrderCostChart(orderCostsExpense);
+      await fetchOrderCostChart();
     } catch (error) {
       console.log(error);
       setTrendChart(null);
@@ -492,15 +519,17 @@ export default function HomePage() {
                 ))}
               </section>
 
-              <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
-                {trendChart ? (
+              {trendChart ? (
+                <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
                   <OrdersTrendLineChart
                     points={trendPoints}
                     metricKey={chartMetric}
                     onMetricChange={setChartMetric}
                   />
-                ) : null}
-                {productSalesChart ? (
+                </section>
+              ) : null}
+              {productSalesChart ? (
+                <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
                   <ProductSalesLineChart
                     products={productSalesProducts}
                     selectedProductId={productSalesProductId}
@@ -511,11 +540,15 @@ export default function HomePage() {
                     onGranularityChange={setProductSalesGranularity}
                     truncated={Boolean(productSalesChart?.truncated)}
                   />
-                ) : null}
-              </section>
+                  <ProductOrdersDonutCard
+                    products={productSalesProducts}
+                    truncated={Boolean(productSalesChart?.truncated)}
+                  />
+                </section>
+              ) : null}
             </>
           ) : productSalesChart ? (
-            <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+            <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
               <ProductSalesLineChart
                 products={productSalesProducts}
                 selectedProductId={productSalesProductId}
@@ -524,6 +557,10 @@ export default function HomePage() {
                 onMetricChange={setProductSalesMetric}
                 granularity={productSalesGranularity}
                 onGranularityChange={setProductSalesGranularity}
+                truncated={Boolean(productSalesChart?.truncated)}
+              />
+              <ProductOrdersDonutCard
+                products={productSalesProducts}
                 truncated={Boolean(productSalesChart?.truncated)}
               />
             </section>
@@ -558,18 +595,30 @@ export default function HomePage() {
 
       <OrderCostsSection
         expense={orderCostsExpense}
+        saveDate={orderCostsSaveDate}
         onExpenseChange={(value) => {
           setOrderCostsExpense(value);
           if (orderCostsError) setOrderCostsError("");
+          if (orderCostsSuccess) setOrderCostsSuccess("");
         }}
-        onCalculate={() => fetchOrderCostChart()}
+        onSaveDateChange={(value) => {
+          setOrderCostsSaveDate(value);
+          if (orderCostsError) setOrderCostsError("");
+          if (orderCostsSuccess) setOrderCostsSuccess("");
+        }}
+        onSave={saveOrderCostDayEntry}
+        saving={orderCostsSaving}
+        successMessage={orderCostsSuccess}
+        chartPeriodHint={
+          dateFrom && dateTo
+            ? `الجراف: من ${dateFrom} إلى ${dateTo}`
+            : "الجراف: آخر 30 يوم (افتراضي)"
+        }
         error={orderCostsError}
         orderCostChart={orderCostChart}
         orderCostChartLoading={orderCostChartLoading}
         orderCostSeries={orderCostSeries}
         onOrderCostSeriesChange={setOrderCostSeries}
-        orderCostGranularity={orderCostGranularity}
-        onOrderCostGranularityChange={setOrderCostGranularity}
         orderCostDateBasis={orderCostDateBasis}
         onOrderCostDateBasisChange={setOrderCostDateBasis}
       />

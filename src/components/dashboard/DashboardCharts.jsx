@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { filterPointsUpToToday } from "../../utils/dateRange";
 import {
   Bar,
   BarChart,
@@ -141,7 +142,7 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
     TREND_METRIC_DEFS.find((m) => m.key === metricKey) ?? TREND_METRIC_DEFS[0];
 
   const chartData = useMemo(() => {
-    const list = Array.isArray(points) ? points : [];
+    const list = filterPointsUpToToday(points);
     return list.map((p) => {
       const raw = p?.[metric.key];
       return {
@@ -238,6 +239,16 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
 
 export const PRODUCT_SALES_METRIC_DEFS = [
   {
+    key: "totalOrders",
+    title: "عدد الأوردرات",
+    accent: "#22c55e",
+    formatSummary: (v) => Number(v ?? 0).toLocaleString("ar-EG"),
+    formatTooltip: (v) => [
+      Number(v ?? 0).toLocaleString("ar-EG"),
+      "عدد الأوردرات",
+    ],
+  },
+  {
     key: "totalUnits",
     title: "القطع المباعة",
     accent: "#0ea5e9",
@@ -286,7 +297,7 @@ export function ProductSalesLineChart({
   }, [productList, selectedProductId]);
 
   const chartData = useMemo(() => {
-    const points = Array.isArray(selectedProduct?.points) ? selectedProduct.points : [];
+    const points = filterPointsUpToToday(selectedProduct?.points);
     return points.map((p) => {
       const raw = p?.[metric.key];
       return {
@@ -487,12 +498,38 @@ export function resolveOrderCostSummaryBlock(summary, seriesKey) {
   return null;
 }
 
+/** ملخص الفترة من النقاط عندما الـ API لا يرسل summary */
+export function computeOrderCostPeriodSummary(points, seriesKey) {
+  const list = Array.isArray(points) ? points : [];
+  const key = normalizeOrderCostSeriesKey(seriesKey);
+  let totalOrders = 0;
+  let totalExpense = 0;
+  let savedDaysOrders = 0;
+  let savedDaysCount = 0;
+  for (const p of list) {
+    const block = resolveOrderCostPointBlock(p, key);
+    const orders = Number(block?.totalOrders ?? 0);
+    totalOrders += orders;
+    if (p?.expenseEntered) {
+      totalExpense += Number(p?.expense ?? 0);
+      savedDaysOrders += orders;
+      savedDaysCount += 1;
+    }
+  }
+  const costPerOrder =
+    savedDaysOrders > 0 && totalExpense > 0 ? totalExpense / savedDaysOrders : 0;
+  return { totalOrders, costPerOrder, totalExpense, savedDaysCount };
+}
+
+const ORDER_COST_DATE_BASIS_LABELS = {
+  created: "تاريخ الإنشاء",
+  activity: "نشاط الطلب",
+};
+
 export function OrderCostLineChart({
   chart,
   seriesKey,
   onSeriesChange,
-  granularity,
-  onGranularityChange,
   dateBasis,
   onDateBasisChange,
   loading,
@@ -503,7 +540,7 @@ export function OrderCostLineChart({
     ORDER_COST_SERIES_DEFS[0];
 
   const chartData = useMemo(() => {
-    const points = Array.isArray(chart?.points) ? chart.points : [];
+    const points = filterPointsUpToToday(chart?.points);
     return points.map((p) => {
       const block = resolveOrderCostPointBlock(p, series.key);
       const raw = block?.costPerOrder;
@@ -512,8 +549,10 @@ export function OrderCostLineChart({
         dateLabel: formatTrendAxisDate(p?.date),
         value: raw == null || raw === "" ? 0 : Number(raw),
         totalOrders: block?.totalOrders ?? 0,
+        dayExpense: Number(p?.expense ?? 0),
+        expenseEntered: Boolean(p?.expenseEntered),
       };
-    });
+      });
   }, [chart?.points, series.key]);
 
   const xTickInterval = useMemo(() => {
@@ -523,9 +562,21 @@ export function OrderCostLineChart({
     return Math.max(0, Math.ceil(n / maxTicks) - 1);
   }, [chartData.length]);
 
-  const summary = resolveOrderCostSummaryBlock(chart?.summary, series.key) ?? {};
-  const expenseEntered = Boolean(chart?.expenseEntered);
-  const expense = Number(chart?.expense ?? 0);
+  const apiSummary = resolveOrderCostSummaryBlock(chart?.summary, series.key);
+  const computed = useMemo(
+    () => computeOrderCostPeriodSummary(chart?.points, series.key),
+    [chart?.points, series.key],
+  );
+  const summary = apiSummary ?? {
+    totalOrders: computed.totalOrders,
+    costPerOrder: computed.costPerOrder,
+  };
+  const totalExpense = computed.totalExpense;
+  const savedDaysCount = computed.savedDaysCount;
+  const liveFilledDaysCount = Number(chart?.liveFilledDaysCount ?? 0);
+  const resolvedDateBasis = chart?.dateBasis ?? dateBasis ?? "created";
+  const dateBasisLabel =
+    ORDER_COST_DATE_BASIS_LABELS[resolvedDateBasis] ?? resolvedDateBasis;
 
   return (
     <div className="dashboard-order-cost-chart">
@@ -536,7 +587,9 @@ export function OrderCostLineChart({
             <p className="dashboard-order-cost-chart__formula">{chart.formulaAr}</p>
           ) : (
             <p className="dashboard-order-cost-chart__formula">
-              تكلفة الطلب = المصروفات ÷ عدد الطلبات — بدون مصروفات = 0
+              يوم مسجّل: مصروفات وتكلفة من السجل · يوم غير مسجّل: طلبات live وتكلفة 0
+              {" · "}
+              أساس التاريخ: {dateBasisLabel}
             </p>
           )}
         </div>
@@ -555,49 +608,40 @@ export function OrderCostLineChart({
               ))}
             </select>
           </label>
-          {/* <label className="dashboard-trend-chart__metric-select">
-            <span>التجميع</span>
-            <select
-              value={granularity}
-              onChange={(e) => onGranularityChange(e.target.value)}
-              aria-label="تجميع الفترة"
-            >
-              <option value="day">يومي</option>
-              <option value="week">أسبوعي</option>
-              <option value="month">شهري</option>
-            </select>
-          </label> */}
-          {/* {onDateBasisChange ? (
+          {onDateBasisChange ? (
             <label className="dashboard-trend-chart__metric-select">
               <span>أساس التاريخ</span>
               <select
                 value={dateBasis ?? "created"}
                 onChange={(e) => onDateBasisChange(e.target.value)}
-                aria-label="أساس تاريخ الفترة"
+                aria-label="أساس تاريخ الطلبات"
               >
                 <option value="created">تاريخ الإنشاء</option>
                 <option value="activity">نشاط الطلب</option>
               </select>
             </label>
-          ) : null} */}
+          ) : null}
         </div>
       </header>
 
       <div className="dashboard-order-cost-chart__summary">
         <span>
-          المصروفات:{" "}
-          <strong>
-            {expenseEntered
-              ? `${Math.round(expense).toLocaleString("ar-EG")} ج.م`
-              : "لم تُدخل"}
-          </strong>
+          أيام بمصروفات محفوظة: <strong>{savedDaysCount.toLocaleString("ar-EG")}</strong>
+        </span>
+        <span>
+          أيام live (بدون مصروفات):{" "}
+          <strong>{liveFilledDaysCount.toLocaleString("ar-EG")}</strong>
+        </span>
+        <span>
+          مصروفات محفوظة:{" "}
+          <strong>{Math.round(totalExpense).toLocaleString("ar-EG")} ج.م</strong>
         </span>
         <span>
           طلبات الفترة:{" "}
           <strong>{Number(summary.totalOrders ?? 0).toLocaleString("ar-EG")}</strong>
         </span>
         <span>
-          تكلفة الطلب (الفترة):{" "}
+          تكلفة الطلب (أيام مسجّلة):{" "}
           <strong>
             {Math.round(Number(summary.costPerOrder ?? 0)).toLocaleString("ar-EG")} ج.م
           </strong>
@@ -636,7 +680,13 @@ export function OrderCostLineChart({
                   const row = payload?.[0]?.payload;
                   if (!row?.date) return "";
                   const orders = Number(row.totalOrders ?? 0).toLocaleString("ar-EG");
-                  return `${formatTrendTooltipDate(row.date)} · ${orders} طلب`;
+                  if (row.expenseEntered) {
+                    const exp = Math.round(Number(row.dayExpense ?? 0)).toLocaleString(
+                      "ar-EG",
+                    );
+                    return `${formatTrendTooltipDate(row.date)} · ${orders} طلب · مصروفات ${exp} ج.م (مسجّل)`;
+                  }
+                  return `${formatTrendTooltipDate(row.date)} · ${orders} طلب (live · بدون مصروفات)`;
                 }}
                 contentStyle={{
                   borderRadius: 10,
@@ -650,7 +700,13 @@ export function OrderCostLineChart({
                 dataKey="value"
                 stroke={series.accent}
                 strokeWidth={2.5}
-                dot={{ r: 3, fill: series.accent }}
+                dot={(props) => {
+                  const { cx, cy, payload } = props;
+                  const fill = payload?.expenseEntered ? series.accent : "#94a3b8";
+                  return (
+                    <circle cx={cx} cy={cy} r={3} fill={fill} stroke={fill} strokeWidth={0} />
+                  );
+                }}
                 activeDot={{ r: 5 }}
                 connectNulls
               />
@@ -661,11 +717,6 @@ export function OrderCostLineChart({
 
       {!loading && chartData.length === 0 ? (
         <p className="dashboard-donut-empty-hint">لا توجد نقاط للفترة المحددة.</p>
-      ) : null}
-      {!loading && !expenseEntered ? (
-        <p className="dashboard-donut-empty-hint">
-          لم تُدخل مصروفات — الخط على 0. أدخلي المصروفات لعرض التكلفة الفعلية.
-        </p>
       ) : null}
     </div>
   );
@@ -777,6 +828,74 @@ export function OrdersStatusBarChart({ byOrderStatus }) {
 }
 
 const DONUT_PALETTE = ["#3b82f6", "#22c55e", "#a855f7", "#f97316", "#0ea5e9", "#64748b"];
+
+const PRODUCT_ORDERS_DONUT_PALETTE = [
+  "#0d9488",
+  "#22c55e",
+  "#ef4444",
+  "#eab308",
+  "#3b82f6",
+  "#64748b",
+  "#a855f7",
+  "#f97316",
+  "#0ea5e9",
+  "#ec4899",
+  "#84cc16",
+  "#6366f1",
+];
+
+const PRODUCT_DONUT_TOP_N = 10;
+
+/** Donut segments: each product's share of total orders in the period. */
+export function buildProductOrdersDonutSegments(products, { maxSlices = PRODUCT_DONUT_TOP_N } = {}) {
+  const list = Array.isArray(products) ? products : [];
+  const rows = list
+    .map((p, i) => ({
+      key: String(p.product_id ?? p.id ?? i),
+      name: String(p.name ?? p.sku ?? "منتج").trim() || "منتج",
+      value: Number(p.summary?.totalOrders ?? p.totalOrders ?? 0),
+      fill: PRODUCT_ORDERS_DONUT_PALETTE[i % PRODUCT_ORDERS_DONUT_PALETTE.length],
+    }))
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (rows.length <= maxSlices) return rows;
+
+  const top = rows.slice(0, maxSlices);
+  const rest = rows.slice(maxSlices);
+  const otherValue = rest.reduce((s, r) => s + r.value, 0);
+  if (otherValue > 0) {
+    top.push({
+      key: "__other__",
+      name: `أخرى (${rest.length} منتج)`,
+      value: otherValue,
+      fill: "#94a3b8",
+    });
+  }
+  return top;
+}
+
+export function ProductOrdersDonutCard({ products, truncated }) {
+  const segments = useMemo(
+    () => buildProductOrdersDonutSegments(products),
+    [products],
+  );
+
+  return (
+    <div className="dashboard-product-orders-donut-wrap">
+      <OrdersDonutCard
+        title="توزيع الطلبات حسب المنتج"
+        subtitle="نسبة طلبات كل منتج من إجمالي الطلبات في الفترة"
+        segments={segments}
+      />
+      {truncated ? (
+        <p className="dashboard-donut-empty-hint dashboard-product-orders-donut__truncated">
+          الدونات تعكس المنتجات المُرجَعة في الاستجابة فقط.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 /** دمج مفاتيح مكررة في stats (مثل new و newOrders) لقطعة واحدة في الدونات. */
 export const ORDER_STATUS_DONUT_DEFS = [
