@@ -1,7 +1,13 @@
 import axios from "axios";
 import { toApiQueryDate, normalizeApiDateParams, normalizeDateInput } from "../utils/dateRange";
 import { getOrderAuditFields } from "../utils/orderAudit";
-import { getDashboardApiPrefix } from "../utils/auth";
+import {
+  getDashboardApiPrefix,
+  getStoredToken,
+  handleSessionExpired,
+  isTokenValid,
+  isUnauthorizedApiError,
+} from "../utils/auth";
 
 const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://127.0.0.1:5050";
 
@@ -11,8 +17,13 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("easyorder_token");
-    if (token) {
+    const token = getStoredToken();
+    const url = String(config?.url ?? "");
+    if (token && !url.includes("/auth/login")) {
+      if (!isTokenValid(token)) {
+        handleSessionExpired();
+        return Promise.reject(new Error("انتهت صلاحية الجلسة"));
+      }
       config.headers = config.headers ?? {};
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -55,6 +66,9 @@ apiClient.interceptors.response.use(
       url: res?.config?.url,
       data: res?.data,
     });
+    if (isUnauthorizedApiError(error)) {
+      handleSessionExpired();
+    }
     return Promise.reject(error);
   },
 );
@@ -280,15 +294,16 @@ export async function getProductSalesChart(params = {}) {
 }
 
 /** Order cost metrics — `GET /api/{system}/costs` */
-export async function getOrderCosts({ expense, date, from, to } = {}) {
-  const params = { expense: Number(expense) };
-  if (date != null && String(date).trim() !== "") {
-    params.date = normalizeDateInput(date) || String(date).trim();
-  } else {
-    if (from != null && String(from).trim() !== "") params.from = from;
-    if (to != null && String(to).trim() !== "") params.to = to;
-  }
+export async function getOrderCosts(params = {}) {
   const response = await apiClient.get(dashboardApiPath("costs"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Order cost trend chart — `GET /api/{system}/charts/order-cost` */
+export async function getOrderCostChart(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("charts/order-cost"), {
     params: cleanApiParams(params),
   });
   return response.data;

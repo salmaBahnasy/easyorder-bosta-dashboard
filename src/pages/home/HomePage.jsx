@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getEmployees,
-  getOrderCosts,
+  getOrderCostChart,
   getOrdersStats,
   getOrdersStatsTrend,
   getProductSalesChart,
@@ -64,9 +64,23 @@ function buildProductSalesQueryParams({ dateRange, dateFrom, dateTo, granularity
   return params;
 }
 
-function buildOrderCostsQueryParams({ expense, dateFrom, dateTo }) {
-  const expenseNum = Number(expense);
-  const params = { expense: expenseNum };
+function buildOrderCostsQueryParams({
+  expense,
+  dateFrom,
+  dateTo,
+  granularity,
+  dateRange,
+  date_basis = "created",
+}) {
+  const params = {};
+  const expenseStr = String(expense ?? "").trim();
+  if (expenseStr !== "") {
+    const expenseNum = Number(expenseStr);
+    if (Number.isFinite(expenseNum) && expenseNum >= 0) {
+      params.expense = expenseNum;
+    }
+  }
+
   const from = String(dateFrom ?? "").trim();
   const to = String(dateTo ?? "").trim();
 
@@ -78,23 +92,64 @@ function buildOrderCostsQueryParams({ expense, dateFrom, dateTo }) {
     params.date = from;
   } else if (to) {
     params.date = to;
+  } else {
+    Object.assign(
+      params,
+      computeEgyptDateRangeParams({ dateRange: dateRange ?? "7d", dateFrom, dateTo }),
+    );
   }
+
+  const g = String(granularity ?? "").trim();
+  if (g) params.granularity = g;
+
+  const basis = String(date_basis ?? "created").trim();
+  if (basis) params.date_basis = basis;
 
   return params;
 }
 
-function normalizeOrderCostsMetrics(response) {
-  return response?.metrics ?? response?.data?.metrics ?? null;
+function normalizeCostMetricBlock(block) {
+  if (!block || typeof block !== "object") return null;
+  return {
+    labelAr: block.labelAr ?? block.label_ar,
+    descriptionAr: block.descriptionAr ?? block.description_ar,
+    totalOrders: block.totalOrders ?? block.total_orders ?? 0,
+    totalSales: block.totalSales ?? block.total_sales ?? 0,
+    salesPerOrder: block.salesPerOrder ?? block.sales_per_order ?? 0,
+    costPerOrder: block.costPerOrder ?? block.cost_per_order ?? 0,
+    salesPerExpense: block.salesPerExpense ?? block.sales_per_expense ?? 0,
+  };
 }
 
-function formatCostsPeriodHint(dateFrom, dateTo) {
-  const from = String(dateFrom ?? "").trim();
-  const to = String(dateTo ?? "").trim();
-  if (from && to && from === to) return `يوم ${from}`;
-  if (from && to) return `من ${from} إلى ${to}`;
-  if (from) return `من ${from}`;
-  if (to) return `حتى ${to}`;
-  return "الشهر الحالي (افتراضي)";
+function normalizeOrderCostChart(response) {
+  const raw = response?.chart ?? response?.data?.chart ?? null;
+  if (!raw) return null;
+
+  const points = Array.isArray(raw.points)
+    ? raw.points.map((p) => ({
+        date: p.date,
+        orders: normalizeCostMetricBlock(p.orders),
+        shipped: normalizeCostMetricBlock(p.shipped),
+        delivered: normalizeCostMetricBlock(p.delivered ?? p.successful),
+      }))
+    : [];
+
+  return {
+    expense: raw.expense,
+    expenseEntered: raw.expenseEntered ?? raw.expense_entered,
+    formulaAr: raw.formulaAr ?? raw.formula_ar,
+    dateBasis: raw.dateBasis ?? raw.date_basis,
+    countsAllOrderStatuses:
+      raw.countsAllOrderStatuses ?? raw.counts_all_order_statuses,
+    points,
+    summary: {
+      orders: normalizeCostMetricBlock(raw.summary?.orders),
+      shipped: normalizeCostMetricBlock(raw.summary?.shipped),
+      delivered: normalizeCostMetricBlock(
+        raw.summary?.delivered ?? raw.summary?.successful,
+      ),
+    },
+  };
 }
 
 export default function HomePage() {
@@ -115,9 +170,12 @@ export default function HomePage() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [productFilter, setProductFilter] = useState("");
   const [orderCostsExpense, setOrderCostsExpense] = useState("");
-  const [orderCostsMetrics, setOrderCostsMetrics] = useState(null);
-  const [orderCostsLoading, setOrderCostsLoading] = useState(false);
   const [orderCostsError, setOrderCostsError] = useState("");
+  const [orderCostChart, setOrderCostChart] = useState(null);
+  const [orderCostChartLoading, setOrderCostChartLoading] = useState(false);
+  const [orderCostSeries, setOrderCostSeries] = useState("orders");
+  const [orderCostGranularity, setOrderCostGranularity] = useState("day");
+  const [orderCostDateBasis, setOrderCostDateBasis] = useState("created");
 
   const buildDashboardQuery = useCallback(
     () =>
@@ -158,37 +216,30 @@ export default function HomePage() {
     };
   }, [buildDashboardQuery, buildProductSalesQuery]);
 
-  const fetchOrderCostsData = useCallback(async (expenseValue = orderCostsExpense) => {
-    const expenseNum = Number(expenseValue);
-    if (!Number.isFinite(expenseNum) || expenseNum < 0 || String(expenseValue ?? "").trim() === "") {
-      setOrderCostsError("أدخلي المصروفات (رقم ≥ 0)");
-      setOrderCostsMetrics(null);
-      return null;
-    }
-
+  const fetchOrderCostChart = useCallback(async (expenseValue = orderCostsExpense) => {
     const query = buildOrderCostsQueryParams({
-      expense: expenseNum,
+      expense: expenseValue,
       dateFrom,
       dateTo,
+      granularity: orderCostGranularity,
+      dateRange,
+      date_basis: orderCostDateBasis,
     });
 
-    setOrderCostsLoading(true);
+    setOrderCostChartLoading(true);
     setOrderCostsError("");
     try {
-      const response = await getOrderCosts(query);
-      const metrics = normalizeOrderCostsMetrics(response);
-      setOrderCostsMetrics(metrics);
-      return metrics;
+      const response = await getOrderCostChart(query);
+      setOrderCostChart(normalizeOrderCostChart(response));
     } catch (error) {
       console.log(error);
-      setOrderCostsMetrics(null);
-      const message = error?.response?.data?.message ?? "تعذر حساب تكلفة الطلبات";
+      setOrderCostChart(null);
+      const message = error?.response?.data?.message ?? "تعذر تحميل جراف تكلفة الطلبات";
       setOrderCostsError(message);
-      return null;
     } finally {
-      setOrderCostsLoading(false);
+      setOrderCostChartLoading(false);
     }
-  }, [orderCostsExpense, dateFrom, dateTo]);
+  }, [orderCostsExpense, dateFrom, dateTo, orderCostGranularity, orderCostDateBasis, dateRange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,6 +341,10 @@ export default function HomePage() {
     };
   }, [fetchDashboardData]);
 
+  useEffect(() => {
+    fetchOrderCostChart();
+  }, [fetchOrderCostChart]);
+
   async function handleRefreshStats() {
     try {
       setLoadingTrend(true);
@@ -303,9 +358,7 @@ export default function HomePage() {
         if (products.some((p) => p.product_id === current)) return current;
         return products[0].product_id;
       });
-      if (String(orderCostsExpense ?? "").trim() !== "") {
-        await fetchOrderCostsData(orderCostsExpense);
-      }
+      await fetchOrderCostChart(orderCostsExpense);
     } catch (error) {
       console.log(error);
       setTrendChart(null);
@@ -350,11 +403,6 @@ export default function HomePage() {
   const orderTypeSegments = useMemo(
     () => buildDonutSegments(ORDER_TYPE_DONUT_DEFS, stats?.byOrderType),
     [stats?.byOrderType],
-  );
-
-  const orderCostsPeriodHint = useMemo(
-    () => formatCostsPeriodHint(dateFrom, dateTo),
-    [dateFrom, dateTo],
   );
 
   return (
@@ -514,12 +562,16 @@ export default function HomePage() {
           setOrderCostsExpense(value);
           if (orderCostsError) setOrderCostsError("");
         }}
-        onCalculate={() => fetchOrderCostsData()}
-        loading={orderCostsLoading}
+        onCalculate={() => fetchOrderCostChart()}
         error={orderCostsError}
-        metrics={orderCostsMetrics}
-        successfulShippingStatus={orderCostsMetrics?.successfulShippingStatus}
-        periodHint={orderCostsPeriodHint}
+        orderCostChart={orderCostChart}
+        orderCostChartLoading={orderCostChartLoading}
+        orderCostSeries={orderCostSeries}
+        onOrderCostSeriesChange={setOrderCostSeries}
+        orderCostGranularity={orderCostGranularity}
+        onOrderCostGranularityChange={setOrderCostGranularity}
+        orderCostDateBasis={orderCostDateBasis}
+        onOrderCostDateBasisChange={setOrderCostDateBasis}
       />
     </div>
   );

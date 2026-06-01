@@ -434,6 +434,243 @@ export function ProductSalesLineChart({
   );
 }
 
+export const ORDER_COST_SERIES_DEFS = [
+  {
+    key: "orders",
+    title: "كل الطلبات",
+    accent: "#3b82f6",
+    formatTooltip: (v) => [
+      `${Math.round(Number(v ?? 0)).toLocaleString("ar-EG")} ج.م`,
+      "تكلفة الطلب (كل الحالات)",
+    ],
+  },
+  {
+    key: "shipped",
+    title: "تم الشحن",
+    accent: "#8b5cf6",
+    formatTooltip: (v) => [
+      `${Math.round(Number(v ?? 0)).toLocaleString("ar-EG")} ج.م`,
+      "تكلفة الطلب (تم الشحن)",
+    ],
+  },
+  {
+    key: "delivered",
+    title: "تم التوصيل",
+    accent: "#22c55e",
+    formatTooltip: (v) => [
+      `${Math.round(Number(v ?? 0)).toLocaleString("ar-EG")} ج.م`,
+      "تكلفة الطلب (تم التوصيل)",
+    ],
+  },
+];
+
+export function resolveOrderCostPointBlock(point, seriesKey) {
+  if (!point || typeof point !== "object") return null;
+  const key = normalizeOrderCostSeriesKey(seriesKey);
+  if (point[key]) return point[key];
+  if (key === "delivered" && point.successful) return point.successful;
+  return null;
+}
+
+export function normalizeOrderCostSeriesKey(seriesKey) {
+  const key = String(seriesKey ?? "orders");
+  if (key === "successful") return "delivered";
+  if (ORDER_COST_SERIES_DEFS.some((s) => s.key === key)) return key;
+  return "orders";
+}
+
+export function resolveOrderCostSummaryBlock(summary, seriesKey) {
+  if (!summary || typeof summary !== "object") return null;
+  const key = normalizeOrderCostSeriesKey(seriesKey);
+  if (summary[key]) return summary[key];
+  if (key === "delivered" && summary.successful) return summary.successful;
+  return null;
+}
+
+export function OrderCostLineChart({
+  chart,
+  seriesKey,
+  onSeriesChange,
+  granularity,
+  onGranularityChange,
+  dateBasis,
+  onDateBasisChange,
+  loading,
+}) {
+  const resolvedSeriesKey = normalizeOrderCostSeriesKey(seriesKey);
+  const series =
+    ORDER_COST_SERIES_DEFS.find((s) => s.key === resolvedSeriesKey) ??
+    ORDER_COST_SERIES_DEFS[0];
+
+  const chartData = useMemo(() => {
+    const points = Array.isArray(chart?.points) ? chart.points : [];
+    return points.map((p) => {
+      const block = resolveOrderCostPointBlock(p, series.key);
+      const raw = block?.costPerOrder;
+      return {
+        date: p?.date,
+        dateLabel: formatTrendAxisDate(p?.date),
+        value: raw == null || raw === "" ? 0 : Number(raw),
+        totalOrders: block?.totalOrders ?? 0,
+      };
+    });
+  }, [chart?.points, series.key]);
+
+  const xTickInterval = useMemo(() => {
+    const n = chartData.length;
+    const maxTicks = 8;
+    if (n <= maxTicks) return 0;
+    return Math.max(0, Math.ceil(n / maxTicks) - 1);
+  }, [chartData.length]);
+
+  const summary = resolveOrderCostSummaryBlock(chart?.summary, series.key) ?? {};
+  const expenseEntered = Boolean(chart?.expenseEntered);
+  const expense = Number(chart?.expense ?? 0);
+
+  return (
+    <div className="dashboard-order-cost-chart">
+      <header className="dashboard-order-cost-chart__head">
+        <div>
+          <h4>جراف تكلفة الطلب</h4>
+          {chart?.formulaAr ? (
+            <p className="dashboard-order-cost-chart__formula">{chart.formulaAr}</p>
+          ) : (
+            <p className="dashboard-order-cost-chart__formula">
+              تكلفة الطلب = المصروفات ÷ عدد الطلبات — بدون مصروفات = 0
+            </p>
+          )}
+        </div>
+        <div className="dashboard-order-cost-chart__controls">
+          <label className="dashboard-trend-chart__metric-select">
+            <span>النوع</span>
+            <select
+              value={resolvedSeriesKey}
+              onChange={(e) => onSeriesChange(e.target.value)}
+              aria-label="نوع تكلفة الطلب"
+            >
+              {ORDER_COST_SERIES_DEFS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* <label className="dashboard-trend-chart__metric-select">
+            <span>التجميع</span>
+            <select
+              value={granularity}
+              onChange={(e) => onGranularityChange(e.target.value)}
+              aria-label="تجميع الفترة"
+            >
+              <option value="day">يومي</option>
+              <option value="week">أسبوعي</option>
+              <option value="month">شهري</option>
+            </select>
+          </label> */}
+          {/* {onDateBasisChange ? (
+            <label className="dashboard-trend-chart__metric-select">
+              <span>أساس التاريخ</span>
+              <select
+                value={dateBasis ?? "created"}
+                onChange={(e) => onDateBasisChange(e.target.value)}
+                aria-label="أساس تاريخ الفترة"
+              >
+                <option value="created">تاريخ الإنشاء</option>
+                <option value="activity">نشاط الطلب</option>
+              </select>
+            </label>
+          ) : null} */}
+        </div>
+      </header>
+
+      <div className="dashboard-order-cost-chart__summary">
+        <span>
+          المصروفات:{" "}
+          <strong>
+            {expenseEntered
+              ? `${Math.round(expense).toLocaleString("ar-EG")} ج.م`
+              : "لم تُدخل"}
+          </strong>
+        </span>
+        <span>
+          طلبات الفترة:{" "}
+          <strong>{Number(summary.totalOrders ?? 0).toLocaleString("ar-EG")}</strong>
+        </span>
+        <span>
+          تكلفة الطلب (الفترة):{" "}
+          <strong>
+            {Math.round(Number(summary.costPerOrder ?? 0)).toLocaleString("ar-EG")} ج.م
+          </strong>
+        </span>
+      </div>
+
+      {loading ? (
+        <p className="dashboard-donut-empty-hint">جاري تحميل الجراف...</p>
+      ) : (
+        <div className="dashboard-recharts-wrap dashboard-trend-chart__wrap dashboard-order-cost-chart__wrap">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 16, right: 20, left: 4, bottom: 52 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e8edf5" />
+              <XAxis
+                dataKey="dateLabel"
+                tick={TrendXAxisTick}
+                interval={xTickInterval}
+                minTickGap={28}
+                height={52}
+                axisLine={{ stroke: "#cbd5e1" }}
+                tickLine={{ stroke: "#cbd5e1" }}
+              />
+              <YAxis
+                tick={{ fontSize: 12, fill: "#475569", fontWeight: 600 }}
+                tickFormatter={formatTrendYAxisTick}
+                width={52}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(v) => series.formatTooltip(v)}
+                labelFormatter={(_l, payload) => {
+                  const row = payload?.[0]?.payload;
+                  if (!row?.date) return "";
+                  const orders = Number(row.totalOrders ?? 0).toLocaleString("ar-EG");
+                  return `${formatTrendTooltipDate(row.date)} · ${orders} طلب`;
+                }}
+                contentStyle={{
+                  borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  fontFamily: '"Cairo", "Segoe UI", Tahoma, sans-serif',
+                  direction: "rtl",
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={series.accent}
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: series.accent }}
+                activeDot={{ r: 5 }}
+                connectNulls
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {!loading && chartData.length === 0 ? (
+        <p className="dashboard-donut-empty-hint">لا توجد نقاط للفترة المحددة.</p>
+      ) : null}
+      {!loading && !expenseEntered ? (
+        <p className="dashboard-donut-empty-hint">
+          لم تُدخل مصروفات — الخط على 0. أدخلي المصروفات لعرض التكلفة الفعلية.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function firstBucketValue(obj, keys) {
   if (!obj || typeof obj !== "object") return 0;
   const lowerMap = {};

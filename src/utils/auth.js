@@ -206,3 +206,45 @@ export function hasValidStoredToken() {
   }
   return valid;
 }
+
+let sessionRedirectInProgress = false;
+
+/** Clears auth and sends the user to login (401 / expired JWT). */
+export function handleSessionExpired() {
+  if (sessionRedirectInProgress) return;
+  const path = window.location.pathname ?? "";
+  if (path === "/login" || path.startsWith("/login/")) {
+    clearAuthStorage();
+    return;
+  }
+
+  sessionRedirectInProgress = true;
+  clearAuthStorage();
+  window.location.replace("/login");
+}
+
+function isAuthLoginRequest(config) {
+  const url = String(config?.url ?? "");
+  return url.includes("/auth/login");
+}
+
+export function isUnauthorizedApiError(error) {
+  if (isAuthLoginRequest(error?.config)) return false;
+
+  const status = error?.response?.status;
+  if (status === 401) return true;
+  if (status === 403) {
+    const msg = String(
+      error?.response?.data?.message ?? error?.response?.data?.error ?? "",
+    ).toLowerCase();
+    return (
+      msg.includes("token") ||
+      msg.includes("jwt") ||
+      msg.includes("expired") ||
+      msg.includes("unauthorized") ||
+      msg.includes("غير مصرح") ||
+      msg.includes("انتهت")
+    );
+  }
+  return false;
+}
