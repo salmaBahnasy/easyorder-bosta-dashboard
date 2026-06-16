@@ -140,6 +140,7 @@ function TrendXAxisTick({ x, y, payload }) {
 export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
   const metric =
     TREND_METRIC_DEFS.find((m) => m.key === metricKey) ?? TREND_METRIC_DEFS[0];
+  const showOrderBreakdown = metric.key === "totalOrders";
 
   const chartData = useMemo(() => {
     const list = filterPointsUpToToday(points);
@@ -149,6 +150,14 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
         date: p?.date,
         dateLabel: formatTrendAxisDate(p?.date),
         value: raw == null || raw === "" ? null : Number(raw),
+        shippedOrders:
+          p?.shippedOrders == null || p?.shippedOrders === ""
+            ? null
+            : Number(p.shippedOrders),
+        successfulOrders:
+          p?.successfulOrders == null || p?.successfulOrders === ""
+            ? null
+            : Number(p.successfulOrders),
       };
     });
   }, [points, metric.key]);
@@ -206,7 +215,16 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
               tickLine={false}
             />
             <Tooltip
-              formatter={(v) => metric.formatTooltip(v)}
+              formatter={(v, _name, item) => {
+                const key = item?.dataKey;
+                if (showOrderBreakdown && key === "shippedOrders") {
+                  return [Number(v ?? 0).toLocaleString("ar-EG"), "تم الشحن"];
+                }
+                if (showOrderBreakdown && key === "successfulOrders") {
+                  return [Number(v ?? 0).toLocaleString("ar-EG"), "تم التسليم"];
+                }
+                return metric.formatTooltip(v);
+              }}
               labelFormatter={(_l, payload) => {
                 const row = payload?.[0]?.payload;
                 return row?.date ? formatTrendTooltipDate(row.date) : "";
@@ -226,7 +244,32 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
               dot={{ r: 3, fill: metric.accent }}
               activeDot={{ r: 5 }}
               connectNulls={false}
+              name={metric.title}
             />
+            {showOrderBreakdown ? (
+              <Line
+                type="monotone"
+                dataKey="shippedOrders"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#3b82f6" }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                name="تم الشحن"
+              />
+            ) : null}
+            {showOrderBreakdown ? (
+              <Line
+                type="monotone"
+                dataKey="successfulOrders"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#8b5cf6" }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                name="تم التسليم"
+              />
+            ) : null}
           </LineChart>
         </ResponsiveContainer>
       </div>
