@@ -38,6 +38,18 @@ export function orderDisplayId(order) {
   return v != null && v !== "" ? v : "—";
 }
 
+/** رقم مرجع الطلب (order_reference / orderReference). */
+export function orderReference(order) {
+  const ref = order?.order_reference ?? order?.orderReference;
+  if (ref != null && String(ref).trim() !== "") return String(ref).trim();
+  return null;
+}
+
+/** للجدول: المرجع إن وُجد وإلا المعرّف المعتاد. */
+export function orderReferenceDisplay(order) {
+  return orderReference(order) ?? orderDisplayId(order);
+}
+
 export function orderCustomer(order) {
   const c = order.customer;
   if (c && typeof c === "object" && c.fullName) {
@@ -109,6 +121,57 @@ export function orderProductBlock(order) {
   return { name: "—", variant: "" };
 }
 
+/** All cart / line items for table display: `{ name, quantity }[]`. */
+export function orderCartProductLines(order) {
+  if (order["Product Name"]) {
+    const qty = order["Product Quantity"];
+    return [
+      {
+        name: toDisplayText(order["Product Name"]),
+        quantity:
+          qty != null && qty !== "" && !Number.isNaN(Number(qty)) ? Number(qty) : null,
+      },
+    ];
+  }
+  if (order.lineItemsSummary) {
+    return [{ name: toDisplayText(order.lineItemsSummary), quantity: null }];
+  }
+
+  const items = order.cart_items ?? order.lineItems;
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => {
+      const name =
+        item?.name ??
+        item?.product_name ??
+        item?.title ??
+        item?.product?.name ??
+        (typeof item?.product === "string" ? item.product : null);
+      const qty = Number(item?.quantity ?? item?.qty);
+      return {
+        name: toDisplayText(name),
+        quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
+      };
+    });
+  }
+
+  const { name } = orderProductBlock(order);
+  if (name && name !== "—") {
+    return [{ name, quantity: null }];
+  }
+  return [];
+}
+
+export function orderUpdatedByName(order) {
+  const v =
+    order?.updated_by_name ??
+    order?.updatedByName ??
+    order?.updated_by?.name ??
+    order?.last_updated_by_name ??
+    order?.lastUpdatedByName;
+  const s = String(v ?? "").trim();
+  return s || "—";
+}
+
 export function orderQuantity(order) {
   if (order["Product Quantity"] != null && order["Product Quantity"] !== "") {
     return order["Product Quantity"];
@@ -174,7 +237,45 @@ export function orderStatus(order) {
   );
 }
 
+/** حالة الشحن من الطلب (للعرض مع «تم الشحن»). */
+export function orderShippingStatus(order) {
+  let v =
+    order.shipping_status ??
+    order.shippingStatus ??
+    order["Shipping Status"];
+  if (v != null && String(v).trim() !== "") return String(v).trim();
+
+  let rd = order?.raw_data;
+  if (typeof rd === "string") {
+    try {
+      rd = JSON.parse(rd);
+    } catch {
+      rd = null;
+    }
+  }
+  if (rd && typeof rd === "object") {
+    v = rd.shipping_status ?? rd.shippingStatus;
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return null;
+}
+
 /** للتنقل لصفحة التفاصيل: الـ API عادة يتوقع uuid في `id` */
 export function orderDetailRouteId(order) {
   return order.id ?? order["Order ID"] ?? order.shortId ?? order.short_id;
+}
+
+/** نص ملاحظة الطلب إن وُجدت. */
+export function orderNote(order) {
+  const raw =
+    order?.note ??
+    order?.notes ??
+    order?.delivery_note ??
+    order?.deliveryNote;
+  return String(raw ?? "").trim();
+}
+
+/** هل الطلب عليه ملاحظة غير فارغة؟ */
+export function orderHasNote(order) {
+  return orderNote(order) !== "";
 }

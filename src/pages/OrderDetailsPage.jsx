@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { getOrderDetails, getZones } from "../api/ordersApi";
+import { appHref } from "../utils/auth";
 import { orderAddress, orderCustomer, orderDisplayId, orderPhone, orderTotalCost } from "../utils/orderDisplay";
 
 function normalizeOrder(payload) {
@@ -30,7 +31,7 @@ export default function OrderDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { orderId } = useParams();
-  const returnTo = location.state?.returnTo ?? "/orders";
+  const returnTo = location.state?.returnTo ?? appHref("orders");
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);

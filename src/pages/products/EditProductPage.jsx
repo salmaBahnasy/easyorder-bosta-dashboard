@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getProductById, updateProduct } from "../../api/ordersApi";
+import { appHref } from "../../utils/auth";
 import {
   formToProductPayload,
   ProductFormFields,
@@ -70,7 +71,7 @@ export default function EditProductPage() {
       setSaving(true);
       await updateProduct(productId, formToProductPayload(form));
       alert("تم تحديث المنتج بنجاح");
-      navigate("/products");
+      navigate(appHref("products"));
     } catch (error) {
       console.log(error);
       const message =
@@ -91,7 +92,7 @@ export default function EditProductPage() {
         <button
           type="button"
           className="product-editor__back"
-          onClick={() => navigate("/products")}
+          onClick={() => navigate(appHref("products"))}
         >
           ← العودة للمنتجات
         </button>
@@ -118,7 +119,7 @@ export default function EditProductPage() {
               <button
                 type="button"
                 className="product-editor__btn product-editor__btn--outline"
-                onClick={() => navigate("/products")}
+                onClick={() => navigate(appHref("products"))}
               >
                 إلغاء
               </button>

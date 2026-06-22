@@ -45,6 +45,53 @@
   font-size: 14px;
 }
 
+.login-page__system-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.login-page__system-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 2px solid #e4e8f1;
+  background: #fafbff;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: right;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.login-page__system-card:hover {
+  border-color: #c9d2e8;
+}
+
+.login-page__system-card--active {
+  border-color: var(--login-primary);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(91, 111, 182, 0.12);
+}
+
+.login-page__system-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--login-text);
+}
+
+.login-page__system-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c8599;
+}
+
 .login-page__form {
   display: grid;
   gap: 14px;

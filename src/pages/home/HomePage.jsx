@@ -1,92 +1,286 @@
-import { useEffect, useMemo, useState } from "react";
-import { getEmployees, getOrdersStats } from "../../api/ordersApi";
-import { colors } from "../../constants/colors";
-import ChartCard from "../../components/dashboard/ChartCard";
-import LatestOrdersTable from "../../components/dashboard/LatestOrdersTable";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  getEmployees,
+  getOrderCostChart,
+  saveOrderCostDay,
+  getOrdersStats,
+  getOrdersStatsTrend,
+  getProductSalesChart,
+  getProducts,
+  resolveEmployeeOrderFilterParams,
+} from "../../api/ordersApi";
+import OrderCostsSection from "../../components/dashboard/OrderCostsSection";
+import {
+  buildDonutSegments,
+  ORDER_SOURCE_DONUT_DEFS,
+  ORDER_STATUS_DONUT_DEFS,
+  ORDER_TYPE_DONUT_DEFS,
+  OrdersDonutCard,
+  OrdersTrendLineChart,
+  ProductOrdersDonutCard,
+  ProductSalesLineChart,
+  SHIPPING_STATUS_DONUT_DEFS,
+  TREND_METRIC_DEFS,
+} from "../../components/dashboard/DashboardCharts";
 import StatCard from "../../components/dashboard/StatCard";
+import DashboardStatsSkeleton from "../../components/dashboard/DashboardStatsSkeleton";
 import "./HomePage.css";
+import {
+  getProductFilterId,
+  getProductListLabel,
+  normalizeProductList,
+} from "../../utils/ordersFilterProductOptions";
+import {
+  computeEgyptDateRangeParams,
+  egyptTodayYmd,
+  filterPointsUpToToday,
+} from "../../utils/dateRange";
+
+function buildTrendQueryParams({
+  dateRange,
+  dateFrom,
+  dateTo,
+  employeeId,
+  employees,
+  product_id,
+}) {
+  const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
+  Object.assign(params, resolveEmployeeOrderFilterParams(employees, employeeId));
+  const pid = typeof product_id === "string" ? product_id.trim() : "";
+  if (pid) params.product_id = pid;
+  return params;
+}
+
+function normalizeTrendChart(response) {
+  const chart = response?.chart ?? response?.data?.chart ?? null;
+  if (!chart) return null;
+  return {
+    ...chart,
+    points: filterPointsUpToToday(chart.points),
+  };
+}
+
+function normalizeProductSalesChart(response) {
+  const chart = response?.chart ?? response?.data?.chart ?? null;
+  if (!chart) return null;
+  const products = Array.isArray(chart.products)
+    ? chart.products.map((p) => ({
+        ...p,
+        points: filterPointsUpToToday(p.points),
+      }))
+    : chart.products;
+  return { ...chart, products };
+}
 
 function normalizeStatsPayload(response) {
   return response?.stats ?? response?.data?.stats ?? response?.data ?? response;
 }
 
-function isoUtcStartOfDay(dateStr) {
-  if (!dateStr || typeof dateStr !== "string") return null;
-  const day = dateStr.slice(0, 10);
-  return `${day}T00:00:00.000Z`;
-}
-
-function isoUtcEndOfDay(dateStr) {
-  if (!dateStr || typeof dateStr !== "string") return null;
-  const day = dateStr.slice(0, 10);
-  return `${day}T23:59:59.999Z`;
-}
-
-function buildStatsQueryParams({ dateRange, dateFrom, dateTo, employeeId }) {
-  const params = {};
-  if (employeeId) params.employeeId = employeeId;
-
-  if (dateFrom && dateTo) {
-    params.from = isoUtcStartOfDay(dateFrom);
-    params.to = isoUtcEndOfDay(dateTo);
-    return params;
-  }
-
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const d = now.getUTCDate();
-  const todayEnd = new Date(Date.UTC(y, m, d, 23, 59, 59, 999)).toISOString();
-
-  if (dateRange === "today") {
-    params.from = new Date(Date.UTC(y, m, d, 0, 0, 0, 0)).toISOString();
-    params.to = todayEnd;
-  } else if (dateRange === "7d") {
-    params.from = new Date(Date.UTC(y, m, d - 6, 0, 0, 0, 0)).toISOString();
-    params.to = todayEnd;
-  } else if (dateRange === "month") {
-    params.from = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0)).toISOString();
-    params.to = todayEnd;
-  }
-
+function buildProductSalesQueryParams({ dateRange, dateFrom, dateTo, granularity }) {
+  const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
+  const g = String(granularity ?? "day").trim();
+  if (g) params.granularity = g;
   return params;
 }
 
-function pickStat(stats, ...keys) {
-  if (!stats) return 0;
-  for (const k of keys) {
-    const v = stats[k];
-    if (v != null && v !== "") return Number(v);
+/** GET chart: from/to + date_basis. بدون from/to → الـ API يستخدم آخر 30 يوم. */
+function buildOrderCostChartRangeQuery({ dateFrom, dateTo, date_basis = "created" }) {
+  const from = String(dateFrom ?? "").trim();
+  const to = String(dateTo ?? "").trim();
+  const basis = String(date_basis ?? "created").trim() || "created";
+  const params = { date_basis: basis };
+  if (from && to) {
+    Object.assign(params, computeEgyptDateRangeParams({ dateFrom: from, dateTo: to }));
   }
-  return 0;
+  return params;
 }
 
-async function fetchDashboardStats(filters) {
-  const query = buildStatsQueryParams(filters);
-  const response = await getOrdersStats(query);
-  return normalizeStatsPayload(response) ?? {};
+function normalizeCostMetricBlock(block) {
+  if (!block || typeof block !== "object") return null;
+  return {
+    labelAr: block.labelAr ?? block.label_ar,
+    descriptionAr: block.descriptionAr ?? block.description_ar,
+    totalOrders: block.totalOrders ?? block.total_orders ?? 0,
+    totalSales: block.totalSales ?? block.total_sales ?? 0,
+    salesPerOrder: block.salesPerOrder ?? block.sales_per_order ?? 0,
+    costPerOrder: block.costPerOrder ?? block.cost_per_order ?? 0,
+    salesPerExpense: block.salesPerExpense ?? block.sales_per_expense ?? 0,
+  };
+}
+
+function normalizeOrderCostChart(response) {
+  const raw = response?.chart ?? response?.data?.chart ?? null;
+  if (!raw) return null;
+
+  const points = filterPointsUpToToday(
+    Array.isArray(raw.points)
+      ? raw.points.map((p) => ({
+          date: p.date,
+          expense: p.expense,
+          expenseEntered: Boolean(p.expenseEntered ?? p.expense_entered),
+          orders: normalizeCostMetricBlock(p.orders),
+          shipped: normalizeCostMetricBlock(p.shipped),
+          delivered: normalizeCostMetricBlock(p.delivered ?? p.successful),
+        }))
+      : [],
+  );
+
+  return {
+    source: raw.source,
+    dateBasis: raw.dateBasis ?? raw.date_basis,
+    liveFilledDaysCount:
+      raw.liveFilledDaysCount ?? raw.live_filled_days_count ?? 0,
+    expense: raw.expense,
+    expenseEntered: raw.expenseEntered ?? raw.expense_entered,
+    formulaAr: raw.formulaAr ?? raw.formula_ar,
+    points,
+    summary: raw.summary
+      ? {
+          orders: normalizeCostMetricBlock(raw.summary?.orders),
+          shipped: normalizeCostMetricBlock(raw.summary?.shipped),
+          delivered: normalizeCostMetricBlock(
+            raw.summary?.delivered ?? raw.summary?.successful,
+          ),
+        }
+      : null,
+  };
 }
 
 export default function HomePage() {
+  const [trendChart, setTrendChart] = useState(null);
+  const [productSalesChart, setProductSalesChart] = useState(null);
   const [stats, setStats] = useState(null);
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [dateRange, setDateRange] = useState("7d");
+  const [loadingTrend, setLoadingTrend] = useState(true);
+  const [chartMetric, setChartMetric] = useState("totalOrders");
+  const [productSalesProductId, setProductSalesProductId] = useState("");
+  const [productSalesMetric, setProductSalesMetric] = useState("totalUnits");
+  const [productSalesGranularity, setProductSalesGranularity] = useState("day");
+  const [dateRange] = useState("7d");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [employees, setEmployees] = useState([]);
   const [employeeFilter, setEmployeeFilter] = useState("");
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productFilter, setProductFilter] = useState("");
+  const [orderCostsExpense, setOrderCostsExpense] = useState("");
+  const [orderCostsSaveDate, setOrderCostsSaveDate] = useState(() => egyptTodayYmd());
+  const [orderCostsError, setOrderCostsError] = useState("");
+  const [orderCostsSuccess, setOrderCostsSuccess] = useState("");
+  const [orderCostsSaving, setOrderCostsSaving] = useState(false);
+  const [orderCostChart, setOrderCostChart] = useState(null);
+  const [orderCostChartLoading, setOrderCostChartLoading] = useState(false);
+  const [orderCostSeries, setOrderCostSeries] = useState("orders");
+  const [orderCostDateBasis, setOrderCostDateBasis] = useState("created");
+
+  const buildDashboardQuery = useCallback(
+    () =>
+      buildTrendQueryParams({
+        dateRange,
+        dateFrom,
+        dateTo,
+        employeeId: String(employeeFilter ?? "").trim(),
+        employees,
+        product_id: productFilter,
+      }),
+    [dateRange, dateFrom, dateTo, employeeFilter, employees, productFilter],
+  );
+
+  const buildProductSalesQuery = useCallback(
+    () =>
+      buildProductSalesQueryParams({
+        dateRange,
+        dateFrom,
+        dateTo,
+        granularity: productSalesGranularity,
+      }),
+    [dateRange, dateFrom, dateTo, productSalesGranularity],
+  );
+
+  const fetchDashboardData = useCallback(async () => {
+    const query = buildDashboardQuery();
+    const productSalesQuery = buildProductSalesQuery();
+    const [trendRes, statsRes, productSalesRes] = await Promise.all([
+      getOrdersStatsTrend(query),
+      getOrdersStats(query),
+      getProductSalesChart(productSalesQuery),
+    ]);
+    return {
+      chart: normalizeTrendChart(trendRes),
+      stats: normalizeStatsPayload(statsRes) ?? {},
+      productSales: normalizeProductSalesChart(productSalesRes),
+    };
+  }, [buildDashboardQuery, buildProductSalesQuery]);
+
+  const fetchOrderCostChart = useCallback(async () => {
+    const query = buildOrderCostChartRangeQuery({
+      dateFrom,
+      dateTo,
+      date_basis: orderCostDateBasis,
+    });
+
+    setOrderCostChartLoading(true);
+    setOrderCostsError("");
+    try {
+      const response = await getOrderCostChart(query);
+      setOrderCostChart(normalizeOrderCostChart(response));
+    } catch (error) {
+      console.log(error);
+      setOrderCostChart(null);
+      const message = error?.response?.data?.message ?? "تعذر تحميل جراف تكلفة الطلبات";
+      setOrderCostsError(message);
+    } finally {
+      setOrderCostChartLoading(false);
+    }
+  }, [dateFrom, dateTo, orderCostDateBasis]);
+
+  const saveOrderCostDayEntry = useCallback(async () => {
+    const day = String(orderCostsSaveDate ?? "").trim();
+    const expenseNum = Number(orderCostsExpense);
+    if (!day) {
+      setOrderCostsError("اختاري تاريخ اليوم");
+      setOrderCostsSuccess("");
+      return;
+    }
+    if (!Number.isFinite(expenseNum) || expenseNum < 0 || String(orderCostsExpense ?? "").trim() === "") {
+      setOrderCostsError("أدخلي المصروفات (رقم ≥ 0)");
+      setOrderCostsSuccess("");
+      return;
+    }
+
+    setOrderCostsSaving(true);
+    setOrderCostsError("");
+    setOrderCostsSuccess("");
+    try {
+      await saveOrderCostDay({
+        date: day,
+        expense: expenseNum,
+        date_basis: orderCostDateBasis,
+      });
+      setOrderCostsSuccess(`تم حفظ مصروفات يوم ${day} بنجاح`);
+      await fetchOrderCostChart();
+    } catch (error) {
+      console.log(error);
+      const message = error?.response?.data?.message ?? "تعذر حفظ مصروفات اليوم";
+      setOrderCostsError(message);
+    } finally {
+      setOrderCostsSaving(false);
+    }
+  }, [orderCostsSaveDate, orderCostsExpense, orderCostDateBasis, fetchOrderCostChart]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadEmployees() {
       try {
-        const result = await getEmployees();
-        const list = Array.isArray(result?.data)
-          ? result.data
-          : Array.isArray(result?.employees)
-            ? result.employees
-            : [];
+        const data = await getEmployees();
+        const list = Array.isArray(data?.employees)
+          ? data.employees
+          : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data)
+              ? data
+              : [];
         if (!cancelled) setEmployees(list);
       } catch (error) {
         console.log(error);
@@ -103,241 +297,148 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    async function loadAllProducts() {
       try {
-        setLoadingStats(true);
-        const data = await fetchDashboardStats({
-          dateRange,
-          dateFrom,
-          dateTo,
-          employeeId: employeeFilter,
-        });
-        if (!cancelled) setStats(data);
+        setProductsLoading(true);
+        const data = await getProducts({ page: 1, limit: 200 });
+        const list = normalizeProductList(data);
+        if (!cancelled) setProducts(list);
       } catch (error) {
         console.log(error);
-        if (!cancelled) setStats(null);
+        if (!cancelled) setProducts([]);
       } finally {
-        if (!cancelled) setLoadingStats(false);
+        if (!cancelled) setProductsLoading(false);
+      }
+    }
+
+    loadAllProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const productOptions = useMemo(() => {
+    const seen = new Set();
+    const rows = [];
+    for (const item of products) {
+      const id = getProductFilterId(item);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const { name, sku } = getProductListLabel(item);
+      const label = sku ? `${name} — ${sku}` : name;
+      rows.push({ id, label });
+    }
+    rows.sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    return rows;
+  }, [products]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoadingTrend(true);
+        const { chart, stats: statsPayload, productSales } = await fetchDashboardData();
+        if (!cancelled) {
+          setTrendChart(chart);
+          setStats(statsPayload);
+          setProductSalesChart(productSales);
+          const products = Array.isArray(productSales?.products) ? productSales.products : [];
+          setProductSalesProductId((current) => {
+            if (products.length === 0) return "";
+            if (products.some((p) => p.product_id === current)) return current;
+            return products[0].product_id;
+          });
+        }
+      } catch (error) {
+        console.log(error);
+        if (!cancelled) {
+          setTrendChart(null);
+          setStats(null);
+          setProductSalesChart(null);
+          setProductSalesProductId("");
+        }
+      } finally {
+        if (!cancelled) setLoadingTrend(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [dateRange, dateFrom, dateTo, employeeFilter]);
+  }, [fetchDashboardData]);
+
+  useEffect(() => {
+    fetchOrderCostChart();
+  }, [fetchOrderCostChart]);
 
   async function handleRefreshStats() {
     try {
-      setLoadingStats(true);
-      const data = await fetchDashboardStats({
-        dateRange,
-        dateFrom,
-        dateTo,
-        employeeId: employeeFilter,
+      setLoadingTrend(true);
+      const { chart, stats: statsPayload, productSales } = await fetchDashboardData();
+      setTrendChart(chart);
+      setStats(statsPayload);
+      setProductSalesChart(productSales);
+      const products = Array.isArray(productSales?.products) ? productSales.products : [];
+      setProductSalesProductId((current) => {
+        if (products.length === 0) return "";
+        if (products.some((p) => p.product_id === current)) return current;
+        return products[0].product_id;
       });
-      setStats(data);
+      await fetchOrderCostChart();
     } catch (error) {
       console.log(error);
+      setTrendChart(null);
       setStats(null);
+      setProductSalesChart(null);
+      setProductSalesProductId("");
     } finally {
-      setLoadingStats(false);
+      setLoadingTrend(false);
     }
   }
 
-  const totalOrders = pickStat(stats, "totalOrders", "total_orders");
-  const confirmedCount = pickStat(
-    stats,
-    "Confirmed",
-    "confirmed",
-    "confirmedOrders",
-  );
-  const shippedCount = pickStat(stats, "Shipped", "shipped", "shippedOrders");
-  const canceledCount = pickStat(
-    stats,
-    "canceled",
-    "cancelled",
-    "cancelledOrders",
-    "canceledOrders",
-  );
-  const noReplayCount = pickStat(
-    stats,
-    "no_replay",
-    "noReplay",
-    "noReplyOrders",
-  );
-  const followUpCount = pickStat(
-    stats,
-    "follow_up",
-    "followUp",
-    "followUpOrders",
-  );
-  const repeaterCount = pickStat(stats, "repeater", "repeaterOrders");
-  const totalSales = pickStat(stats, "totalRevenue", "totalSales", "total_sales");
-
-  const periodHint = "حسب الفترة والفلتر الحالي";
+  const summary = trendChart?.summary ?? {};
+  const trendPoints = trendChart?.points ?? [];
+  const productSalesProducts = productSalesChart?.products ?? [];
+  const periodHint = "ملخص الفترة المحددة";
 
   const kpiCards = useMemo(
-    () => [
-      {
-        key: "total",
-        title: "إجمالي الطلبات",
-        value: totalOrders.toLocaleString("ar-EG"),
-        icon: "📦",
+    () =>
+      TREND_METRIC_DEFS.map((def) => ({
+        key: def.key,
+        title: def.title,
+        value: def.formatSummary(summary[def.key]),
+        icon: def.icon,
         changeText: periodHint,
-        accent: colors.primaryBlue,
-      },
-      {
-        key: "confirmed",
-        title: "مؤكد",
-        value: confirmedCount.toLocaleString("ar-EG"),
-        icon: "✅",
-        changeText: periodHint,
-        accent: colors.secondaryGreen,
-      },
-      {
-        key: "shipped",
-        title: "مشحون",
-        value: shippedCount.toLocaleString("ar-EG"),
-        icon: "🚚",
-        changeText: periodHint,
-        accent: "#0891b2",
-      },
-      {
-        key: "canceled",
-        title: "ملغي",
-        value: canceledCount.toLocaleString("ar-EG"),
-        icon: "❌",
-        changeText: periodHint,
-        accent: "#ea580c",
-      },
-      {
-        key: "no_replay",
-        title: "لا يرد",
-        value: noReplayCount.toLocaleString("ar-EG"),
-        icon: "📵",
-        changeText: periodHint,
-        accent: "#7c3aed",
-      },
-      {
-        key: "follow_up",
-        title: "متابعة",
-        value: followUpCount.toLocaleString("ar-EG"),
-        icon: "📋",
-        changeText: periodHint,
-        accent: "#ca8a04",
-      },
-      {
-        key: "repeater",
-        title: "مكرر",
-        value: repeaterCount.toLocaleString("ar-EG"),
-        icon: "🔁",
-        changeText: periodHint,
-        accent: "#6366f1",
-      },
-      {
-        key: "sales",
-        title: "إجمالي المبيعات",
-        value: `${totalSales.toLocaleString("ar-EG")} ج`,
-        icon: "💰",
-        changeText: periodHint,
-        accent: colors.primaryBlue,
-      },
-    ],
-    [
-      canceledCount,
-      confirmedCount,
-      followUpCount,
-      noReplayCount,
-      repeaterCount,
-      shippedCount,
-      totalOrders,
-      totalSales,
-    ],
+        accent: def.accent,
+      })),
+    [summary, periodHint],
   );
 
-  const orderStatusItems = useMemo(() => {
-    const items = [
-      { label: "مؤكد", value: confirmedCount, color: "#5DBB63" },
-      { label: "مشحون", value: shippedCount, color: "#0891b2" },
-      { label: "ملغي", value: canceledCount, color: "#f97316" },
-      { label: "لا يرد", value: noReplayCount, color: "#7c3aed" },
-      { label: "متابعة", value: followUpCount, color: "#ca8a04" },
-      { label: "مكرر", value: repeaterCount, color: "#6366f1" },
-    ];
-    const maxValue = Math.max(...items.map((item) => item.value), 1);
-    return { items, maxValue };
-  }, [
-    canceledCount,
-    confirmedCount,
-    followUpCount,
-    noReplayCount,
-    repeaterCount,
-    shippedCount,
-  ]);
-
-  const dailySales = useMemo(() => {
-    const fromApi = Array.isArray(stats?.dailySales) ? stats.dailySales : null;
-    if (fromApi && fromApi.length > 0) {
-      return fromApi.slice(0, 7).map((item, idx) => ({
-        day: item?.day ?? item?.date ?? `يوم ${idx + 1}`,
-        amount: Number(item?.amount ?? item?.sales ?? 0),
-      }));
-    }
-
-    const base = totalSales > 0 ? Math.max(Math.round(totalSales / 7), 1) : 1200;
-    return ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"].map(
-      (day, idx) => ({
-        day,
-        amount: base + (idx % 3) * Math.round(base * 0.15),
-      })
-    );
-  }, [stats, totalSales]);
-
-  const latestOrders = useMemo(() => {
-    const fromApi = Array.isArray(stats?.latestOrders) ? stats.latestOrders : null;
-    if (fromApi && fromApi.length > 0) {
-      return fromApi.slice(0, 6).map((order, idx) => ({
-        id: order?.id ?? order?.orderId ?? `#${1000 + idx}`,
-        status: order?.status ?? "جديد",
-        amount: `${Number(order?.amount ?? order?.total ?? 0).toLocaleString("ar-EG")} ج`,
-        date: order?.date ?? order?.createdAt?.slice(0, 10) ?? "-",
-      }));
-    }
-
-    return [
-      { id: "#4521", status: "مؤكد", amount: "1,250 ج", date: "2026-04-28" },
-      { id: "#4518", status: "جديد", amount: "980 ج", date: "2026-04-28" },
-      { id: "#4515", status: "لا يرد", amount: "640 ج", date: "2026-04-27" },
-      { id: "#4512", status: "ملغي", amount: "720 ج", date: "2026-04-27" },
-      { id: "#4509", status: "مشحون", amount: "1,480 ج", date: "2026-04-26" },
-    ];
-  }, [stats]);
-
-  const topProducts = useMemo(() => {
-    const fromApi = Array.isArray(stats?.topProducts) ? stats.topProducts : null;
-    if (fromApi && fromApi.length > 0) {
-      return fromApi.slice(0, 6).map((item, idx) => ({
-        sku: item?.sku ?? item?.name ?? `SKU-${idx + 1}`,
-        sold: Number(item?.sold ?? item?.count ?? 0),
-      }));
-    }
-    return [
-      { sku: "ENAYA-PILLOW-01", sold: 132 },
-      { sku: "ENAYA-PILLOW-02", sold: 111 },
-      { sku: "ENAYA-KIDS-01", sold: 87 },
-      { sku: "ENAYA-MEDICAL-PLUS", sold: 74 },
-      { sku: "ENAYA-SUPPORT-05", sold: 68 },
-    ];
-  }, [stats]);
+  const orderStatusSegments = useMemo(
+    () => buildDonutSegments(ORDER_STATUS_DONUT_DEFS, stats?.byOrderStatus),
+    [stats?.byOrderStatus],
+  );
+  const shippingSegments = useMemo(
+    () => buildDonutSegments(SHIPPING_STATUS_DONUT_DEFS, stats?.byShippingStatus),
+    [stats?.byShippingStatus],
+  );
+  const orderSourceSegments = useMemo(
+    () => buildDonutSegments(ORDER_SOURCE_DONUT_DEFS, stats?.byOrderSource),
+    [stats?.byOrderSource],
+  );
+  const orderTypeSegments = useMemo(
+    () => buildDonutSegments(ORDER_TYPE_DONUT_DEFS, stats?.byOrderType),
+    [stats?.byOrderType],
+  );
 
   return (
     <div className="dashboard-page">
-       <div className="title-topbar">
-          <h1>لوحة الإحصائيات</h1>
-          <p>نظرة عامة على أداء الطلبات والمبيعات</p>
-        </div>
+      <div className="title-topbar">
+        <h1>لوحة الإحصائيات</h1>
+        <p>نظرة عامة على أداء الطلبات والمبيعات</p>
+      </div>
       <section className="dashboard-topbar">
-       
         <div className="dashboard-topbar__controls">
           <select
             className="dashboard-select dashboard-select--employee"
@@ -347,21 +448,34 @@ export default function HomePage() {
             title="تصفية حسب الموظف"
           >
             <option value="">كل الموظفين</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={String(emp.id)}>
-                {emp.name ?? emp.email ?? `موظف #${emp.id}`}
+            {employees.map((emp) => {
+              const eid = String(emp?.id ?? emp?._id ?? emp?.employeeId ?? "").trim();
+              if (!eid) return null;
+              return (
+                <option key={eid} value={eid}>
+                  {emp.name ?? emp.email ?? `موظف #${eid}`}
+                </option>
+              );
+            })}
+          </select>
+          <select
+            className="dashboard-select dashboard-select--product"
+            value={productFilter}
+            onChange={(e) => setProductFilter(e.target.value)}
+            disabled={productsLoading}
+            aria-label="تصفية حسب المنتج"
+            title="تصفية حسب المنتج"
+          >
+            <option value="">
+              {productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"}
+            </option>
+            {productOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
               </option>
             ))}
           </select>
-          {/* <select
-            className="dashboard-select"
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-          >
-            <option value="today">اليوم</option>
-            <option value="7d">آخر 7 أيام</option>
-            <option value="month">الشهر</option>
-          </select> */}
+
           <input
             type="date"
             className="dashboard-date-input"
@@ -384,84 +498,130 @@ export default function HomePage() {
         </div>
       </section>
 
-      {loadingStats ? (
-        <p>جاري تحميل الإحصائيات...</p>
-      ) : !stats ? (
-        <p>تعذر تحميل الإحصائيات حاليًا.</p>
+      {loadingTrend ? (
+        <DashboardStatsSkeleton />
+      ) : !trendChart && !stats && !productSalesChart ? (
+        <p className="dashboard-load-error">تعذر تحميل الإحصائيات حاليًا.</p>
       ) : (
         <>
-          <section className="dashboard-kpis">
-            {kpiCards.map((card) => (
-              <StatCard
-                key={card.key}
-                title={card.title}
-                value={card.value}
-                changeText={card.changeText}
-                icon={card.icon}
-                accent={card.accent}
+          {trendChart ? (
+            <>
+              <section className="dashboard-kpis dashboard-kpis--5">
+                {kpiCards.map((card) => (
+                  <StatCard
+                    key={card.key}
+                    title={card.title}
+                    value={card.value}
+                    changeText={card.changeText}
+                    icon={card.icon}
+                    accent={card.accent}
+                  />
+                ))}
+              </section>
+
+              {trendChart ? (
+                <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+                  <OrdersTrendLineChart
+                    points={trendPoints}
+                    metricKey={chartMetric}
+                    onMetricChange={setChartMetric}
+                  />
+                </section>
+              ) : null}
+              {productSalesChart ? (
+                <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
+                  <ProductSalesLineChart
+                    products={productSalesProducts}
+                    selectedProductId={productSalesProductId}
+                    onProductChange={setProductSalesProductId}
+                    metricKey={productSalesMetric}
+                    onMetricChange={setProductSalesMetric}
+                    granularity={productSalesGranularity}
+                    onGranularityChange={setProductSalesGranularity}
+                    truncated={Boolean(productSalesChart?.truncated)}
+                  />
+                  <ProductOrdersDonutCard
+                    products={productSalesProducts}
+                    truncated={Boolean(productSalesChart?.truncated)}
+                  />
+                </section>
+              ) : null}
+            </>
+          ) : productSalesChart ? (
+            <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
+              <ProductSalesLineChart
+                products={productSalesProducts}
+                selectedProductId={productSalesProductId}
+                onProductChange={setProductSalesProductId}
+                metricKey={productSalesMetric}
+                onMetricChange={setProductSalesMetric}
+                granularity={productSalesGranularity}
+                onGranularityChange={setProductSalesGranularity}
+                truncated={Boolean(productSalesChart?.truncated)}
               />
-            ))}
-          </section>
-
-          <section className="dashboard-middle">
-            <ChartCard
-              title="الطلبات حسب الحالة"
-              subtitle="مؤكد، مشحون، ملغي، لا يرد، متابعة، مكرر — حسب الفترة والفلتر"
-            >
-              <div className="dashboard-status-chart">
-                {orderStatusItems.items.map((item) => (
-                  <div key={item.label} className="dashboard-status-row">
-                    <div className="dashboard-status-row__head">
-                      <span>{item.label}</span>
-                      <strong>{item.value.toLocaleString("ar-EG")}</strong>
-                    </div>
-                    <div className="dashboard-progress">
-                      <span
-                        style={{
-                          width: `${(item.value / orderStatusItems.maxValue) * 100}%`,
-                          backgroundColor: item.color,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ChartCard>
-
-            <ChartCard title="المبيعات اليومية" subtitle="أداء المبيعات اليومي">
-              <div className="dashboard-sales-chart">
-                {dailySales.map((item) => (
-                  <div className="dashboard-sales-bar" key={item.day}>
-                    <span
-                      style={{
-                        height: `${Math.max((item.amount / Math.max(...dailySales.map((d) => d.amount), 1)) * 150, 16)}px`,
-                      }}
-                    />
-                    <label>{item.day}</label>
-                  </div>
-                ))}
-              </div>
-            </ChartCard>
-          </section>
-
-          <section className="dashboard-bottom">
-            <LatestOrdersTable rows={latestOrders} />
-
-            <section className="dashboard-products-card">
-              <h3>Top Products</h3>
-              <p>أكثر SKU مبيعًا</p>
-              <ul className="dashboard-products-list">
-                {topProducts.map((product) => (
-                  <li key={product.sku} className="dashboard-products-item">
-                    <span>{product.sku}</span>
-                    <strong>{product.sold.toLocaleString("ar-EG")} طلب</strong>
-                  </li>
-                ))}
-              </ul>
+              <ProductOrdersDonutCard
+                products={productSalesProducts}
+                truncated={Boolean(productSalesChart?.truncated)}
+              />
             </section>
-          </section>
+          ) : null}
+
+          {stats ? (
+            <section className="dashboard-charts-row dashboard-charts-row--donuts">
+              <OrdersDonutCard
+                title="حالات الطلب"
+                subtitle="توزيع الطلبات حسب الحالة"
+                segments={orderStatusSegments}
+              />
+              <OrdersDonutCard
+                title="حالات التوصيل"
+                subtitle="حسب حالة الشحن"
+                segments={shippingSegments}
+              />
+              <OrdersDonutCard
+                title="مصادر الطلب"
+                subtitle="متجر، واتساب، وغيرها"
+                segments={orderSourceSegments}
+              />
+              <OrdersDonutCard
+                title="نوع الطلب"
+                subtitle="جديد، استبدال، مرتجع"
+                segments={orderTypeSegments}
+              />
+            </section>
+          ) : null}
         </>
       )}
+
+      <OrderCostsSection
+        expense={orderCostsExpense}
+        saveDate={orderCostsSaveDate}
+        onExpenseChange={(value) => {
+          setOrderCostsExpense(value);
+          if (orderCostsError) setOrderCostsError("");
+          if (orderCostsSuccess) setOrderCostsSuccess("");
+        }}
+        onSaveDateChange={(value) => {
+          setOrderCostsSaveDate(value);
+          if (orderCostsError) setOrderCostsError("");
+          if (orderCostsSuccess) setOrderCostsSuccess("");
+        }}
+        onSave={saveOrderCostDayEntry}
+        saving={orderCostsSaving}
+        successMessage={orderCostsSuccess}
+        chartPeriodHint={
+          dateFrom && dateTo
+            ? `الجراف: من ${dateFrom} إلى ${dateTo}`
+            : "الجراف: آخر 30 يوم (افتراضي)"
+        }
+        error={orderCostsError}
+        orderCostChart={orderCostChart}
+        orderCostChartLoading={orderCostChartLoading}
+        orderCostSeries={orderCostSeries}
+        onOrderCostSeriesChange={setOrderCostSeries}
+        orderCostDateBasis={orderCostDateBasis}
+        onOrderCostDateBasisChange={setOrderCostDateBasis}
+      />
     </div>
   );
 }

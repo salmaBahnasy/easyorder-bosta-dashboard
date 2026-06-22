@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createProduct } from "../../api/ordersApi";
+import { appHref } from "../../utils/auth";
 import {
   emptyProductForm,
   formToProductPayload,
@@ -32,7 +33,7 @@ export default function CreateProductPage() {
       setSaving(true);
       await createProduct(formToProductPayload(form));
       alert("تم إنشاء المنتج بنجاح");
-      navigate("/products");
+      navigate(appHref("products"));
     } catch (error) {
       console.log(error);
       const message =
@@ -53,7 +54,7 @@ export default function CreateProductPage() {
         <button
           type="button"
           className="product-editor__back"
-          onClick={() => navigate("/products")}
+          onClick={() => navigate(appHref("products"))}
         >
           ← العودة للمنتجات
         </button>
@@ -73,7 +74,7 @@ export default function CreateProductPage() {
             <button
               type="button"
               className="product-editor__btn product-editor__btn--outline"
-              onClick={() => navigate("/products")}
+              onClick={() => navigate(appHref("products"))}
             >
               إلغاء
             </button>

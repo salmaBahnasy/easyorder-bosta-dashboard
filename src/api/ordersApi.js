@@ -1,4 +1,13 @@
 import axios from "axios";
+import { toApiQueryDate, normalizeApiDateParams, normalizeDateInput } from "../utils/dateRange";
+import { getOrderAuditFields } from "../utils/orderAudit";
+import {
+  getDashboardApiPrefix,
+  getStoredToken,
+  handleSessionExpired,
+  isTokenValid,
+  isUnauthorizedApiError,
+} from "../utils/auth";
 
 const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://127.0.0.1:5050";
 
@@ -8,8 +17,13 @@ const apiClient = axios.create({
 
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("easyorder_token");
-    if (token) {
+    const token = getStoredToken();
+    const url = String(config?.url ?? "");
+    if (token && !url.includes("/auth/login")) {
+      if (!isTokenValid(token)) {
+        handleSessionExpired();
+        return Promise.reject(new Error("انتهت صلاحية الجلسة"));
+      }
       config.headers = config.headers ?? {};
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -29,6 +43,12 @@ apiClient.interceptors.request.use(
   },
 );
 
+function dashboardApiPath(resourcePath) {
+  const prefix = getDashboardApiPrefix();
+  const r = String(resourcePath ?? "").replace(/^\/+/, "");
+  return `${prefix}/${r}`;
+}
+
 apiClient.interceptors.response.use(
   (response) => {
     console.log("[ordersApi] RESPONSE", {
@@ -46,39 +66,149 @@ apiClient.interceptors.response.use(
       url: res?.config?.url,
       data: res?.data,
     });
+    if (isUnauthorizedApiError(error)) {
+      handleSessionExpired();
+    }
     return Promise.reject(error);
   },
 );
 
-export async function getOrders({
+/**
+ * Maps UI employee selection to `employee_id` / `employeeId` query value (employee UUID).
+ */
+export function resolveEmployeeOrderFilterParams(
+  _employees,
+  selectedEmployeeId,
+) {
+  const id = String(selectedEmployeeId ?? "").trim();
+  if (!id) return {};
+  return { employee_id: id };
+}
+
+/** `GET /api/{system}/added-orders` */
+export async function getAddedOrders({
   page = 1,
-  limit = 20,
-  status,
-  employeeId,
+  limit = 50,
   from,
   to,
+  employee_id,
+  employeeId,
+  product,
 } = {}) {
-  const response = await apiClient.get("/api/orders", {
-    params: {
-      page,
-      limit,
-      status,
-      employeeId,
-      from,
-      to,
+  const params = {
+    page,
+    limit,
+    from: toApiQueryDate(from, false),
+    to: toApiQueryDate(to, true),
+    employee_id: employee_id ?? employeeId,
+    product,
+  };
+  const cleaned = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+  const response = await apiClient.get(dashboardApiPath("added-orders"), {
+    params: cleaned,
+  });
+  return response.data;
+}
+
+/** `POST /api/{system}/added-orders` */
+export async function createAddedOrder(payload) {
+  const response = await apiClient.post(
+    dashboardApiPath("added-orders"),
+    payload,
+  );
+  return response.data;
+}
+
+/** `GET /api/{system}/orders/reference/:orderReference?presented=true` */
+export async function getOrderByReference(orderReference, { presented = true } = {}) {
+  const ref = String(orderReference ?? "").trim();
+  if (!ref) {
+    throw new Error("order_reference مطلوب");
+  }
+  const response = await apiClient.get(
+    dashboardApiPath(`orders/reference/${encodeURIComponent(ref)}`),
+    {
+      params: presented ? { presented: "true" } : undefined,
     },
+  );
+  return response.data;
+}
+
+export async function getOrders({
+  page = 1,
+  limit = 50,
+  status,
+  employee_id,
+  employeeId,
+  phone,
+  customer_name,
+  customerName,
+  full_name,
+  fullName,
+  name,
+  from,
+  to,
+  order_source,
+  order_type,
+  shipping_status,
+  product_id,
+  productId,
+  product_sku,
+  productSku,
+} = {}) {
+  const employee = employee_id ?? employeeId;
+  const product = product_id ?? productId;
+  const sku = product_sku ?? productSku;
+  const customerNameQuery = [
+    customer_name,
+    customerName,
+    full_name,
+    fullName,
+    name,
+  ]
+    .map((v) => String(v ?? "").trim())
+    .find(Boolean);
+  const params = {
+    page,
+    limit,
+    status,
+    employee_id: employee,
+    phone,
+    customer_name: customerNameQuery,
+    from: toApiQueryDate(from, false),
+    to: toApiQueryDate(to, true),
+    order_source,
+    order_type,
+    shipping_status,
+    product_id: product,
+    product_sku: sku,
+  };
+
+  const cleaned = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+
+  const response = await apiClient.get(dashboardApiPath("orders"), {
+    params: cleaned,
   });
 
   return response.data;
 }
 
 export async function getOrderDetails(orderId) {
-  const response = await apiClient.get(`/api/orders/${orderId}`);
+  const response = await apiClient.get(dashboardApiPath(`orders/${orderId}`));
   return response.data;
 }
 
 export async function createOrder(payload) {
-  const response = await apiClient.post("/api/orders", payload);
+  const body = { ...payload, ...getOrderAuditFields() };
+  const response = await apiClient.post(dashboardApiPath("orders"), body);
   return response.data;
 }
 
@@ -89,25 +219,127 @@ export async function getZones() {
   return response.data;
 }
 
-export async function updateOrderStatus(orderId, status) {
-  const response = await apiClient.patch(`/api/orders/${orderId}/status`, {
-    status,
+function buildBostaSearchParams({ q, search, name } = {}) {
+  const term = String(q ?? search ?? name ?? "").trim();
+  if (!term) return {};
+  return { q: term };
+}
+
+/** Bosta cities — `GET /api/{system}/bosta/cities?q=...` */
+export async function getBostaCities(searchParams = {}) {
+  const response = await apiClient.get(dashboardApiPath("bosta/cities"), {
+    params: buildBostaSearchParams(searchParams),
   });
   return response.data;
 }
 
-export async function updateOrder(orderId, payload) {
-  const response = await apiClient.patch(`/api/orders/${orderId}`, payload);
+/** Bosta districts — `GET /api/{system}/bosta/cities/:cityId/districts?q=...` */
+export async function getBostaDistricts(cityId, searchParams = {}) {
+  const id = String(cityId ?? "").trim();
+  if (!id) return { data: [] };
+  const response = await apiClient.get(
+    dashboardApiPath(`bosta/cities/${encodeURIComponent(id)}/districts`),
+    { params: buildBostaSearchParams(searchParams) },
+  );
   return response.data;
 }
 
-export async function getOrdersStats(params = {}) {
-  const clean = Object.fromEntries(
-    Object.entries(params).filter(
+export async function updateOrderStatus(orderId, status) {
+  const body = { status, ...getOrderAuditFields() };
+  const response = await apiClient.patch(
+    dashboardApiPath(`orders/${orderId}/status`),
+    body,
+  );
+  return response.data;
+}
+
+export async function updateOrder(orderId, payload) {
+  const body = { ...payload, ...getOrderAuditFields() };
+  const response = await apiClient.patch(
+    dashboardApiPath(`orders/${orderId}`),
+    body,
+  );
+  return response.data;
+}
+
+function cleanApiParams(params = {}) {
+  return Object.fromEntries(
+    Object.entries(normalizeApiDateParams(params)).filter(
       ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
     ),
   );
-  const response = await apiClient.get("/api/orders/stats", { params: clean });
+}
+
+export async function getOrdersStats(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("orders/stats"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Orders trend + summary KPIs — `GET /api/{system}/orders/stats/trend` */
+export async function getOrdersStatsTrend(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("orders/stats/trend"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Product sales chart — `GET /api/{system}/charts/product-sales` */
+export async function getProductSalesChart(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("charts/product-sales"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Order cost metrics — `GET /api/{system}/costs` */
+export async function getOrderCosts(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("costs"), {
+    params: cleanApiParams(params),
+  });
+  return response.data;
+}
+
+/** Order cost chart — `GET /api/{system}/charts/order-cost?from=&to=&date_basis=` */
+export async function getOrderCostChart({ from, to, date_basis } = {}) {
+  const params = cleanApiParams({ from, to, date_basis });
+  const response = await apiClient.get(dashboardApiPath("charts/order-cost"), {
+    params,
+  });
+  return response.data;
+}
+
+/** Save one day expense + order counts — `POST /api/{system}/charts/order-cost?date_basis=` */
+export async function saveOrderCostDay({ date, expense, date_basis } = {}) {
+  const day = normalizeDateInput(date) || String(date ?? "").trim();
+  const body = { date: day, expense: Number(expense) };
+  const params = cleanApiParams({ date_basis });
+  const url = dashboardApiPath("charts/order-cost");
+
+  console.log("[ordersApi] saveOrderCostDay REQUEST", { method: "POST", url, body });
+
+  try {
+    const response = await apiClient.post(url, body, { params });
+    console.log("[ordersApi] saveOrderCostDay RESPONSE", {
+      status: response.status,
+      data: response.data,
+    });
+    return response.data;
+  } catch (error) {
+    console.log("[ordersApi] saveOrderCostDay RESPONSE ERROR", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    throw error;
+  }
+}
+
+export async function getOrdersAnalytics(params = {}) {
+  const response = await apiClient.get(dashboardApiPath("orders/analytics"), {
+    params: cleanApiParams(params),
+  });
   return response.data;
 }
 
@@ -115,27 +347,38 @@ export async function getProducts({ page = 1, limit = 50, search } = {}) {
   const params = { page, limit };
   const q = typeof search === "string" ? search.trim() : "";
   if (q) params.search = q;
-  const response = await apiClient.get("/api/products", { params });
+  const response = await apiClient.get(dashboardApiPath("products"), {
+    params,
+  });
   return response.data;
 }
 
 export async function getProductById(productId) {
-  const response = await apiClient.get(`/api/products/${productId}`);
+  const response = await apiClient.get(
+    dashboardApiPath(`products/${productId}`),
+  );
   return response.data;
 }
 
 export async function createProduct(payload) {
-  const response = await apiClient.post("/api/products", payload);
+  const response = await apiClient.post(dashboardApiPath("products"), payload);
   return response.data;
 }
 
 export async function updateProduct(productId, payload) {
-  const response = await apiClient.patch(`/api/products/${productId}`, payload);
+  const response = await apiClient.patch(
+    dashboardApiPath(`products/${productId}`),
+    payload,
+  );
   return response.data;
 }
 
-export async function loginSenior({ email, password }) {
-  const response = await apiClient.post("/api/employees/login-senior", {
+/**
+ * @param {"easyorder" | "salla"} system
+ */
+export async function loginDashboard(system, { email, password }) {
+  const prefix = system === "salla" ? "/api/salla" : "/api/easyorder";
+  const response = await apiClient.post(`${prefix}/auth/login`, {
     email,
     password,
   });
@@ -143,29 +386,51 @@ export async function loginSenior({ email, password }) {
 }
 
 export async function getEmployees() {
-  const response = await apiClient.get("/api/employees");
+  const response = await apiClient.get(dashboardApiPath("employees"));
   return response.data;
 }
 
-export async function createEmployee({ name, email, password, role }) {
-  const response = await apiClient.post("/api/employees", {
+export async function createEmployee({
+  name,
+  email,
+  password,
+  is_active,
+  employeeRole,
+}) {
+  const privilege =
+    employeeRole != null && String(employeeRole).trim() !== ""
+      ? normalizeEmployeeRoleForApi(employeeRole)
+      : "employee";
+
+  const response = await apiClient.post(dashboardApiPath("employees"), {
     name,
     email,
     password,
-    role,
+    role: privilege,
+    employeeRole: privilege,
+    is_active: Boolean(is_active),
   });
   return response.data;
 }
 
+function normalizeEmployeeRoleForApi(value) {
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return s === "admin" ? "admin" : "employee";
+}
+
 export async function updateEmployee(employeeId, payload) {
   const response = await apiClient.patch(
-    `/api/employees/${employeeId}`,
+    dashboardApiPath(`employees/${employeeId}`),
     payload,
   );
   return response.data;
 }
 
 export async function deleteEmployee(employeeId) {
-  const response = await apiClient.delete(`/api/employees/${employeeId}`);
+  const response = await apiClient.delete(
+    dashboardApiPath(`employees/${employeeId}`),
+  );
   return response.data;
 }

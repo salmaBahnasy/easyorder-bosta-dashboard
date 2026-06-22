@@ -1,33 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getProducts, getZones, updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import { updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
+import CartProductSelect from "../../components/CartProductSelect";
+import FeedbackModal from "../../components/FeedbackModal";
+import { useProductCatalog } from "../../hooks/useProductCatalog";
+import { appHref } from "../../utils/auth";
+import {
+  bostaCityLabel,
+  getOrderGovernmentName,
+  parseDistrictHintFromAddress,
+} from "../../utils/bostaLocation";
+import {
+  createEmptyCartRow,
+  parseProductRawData,
+  productOptionId,
+  productToCartFields,
+  unwrapCatalogProduct,
+} from "./cartCatalogHelpers";
 import {
   orderAddress,
   orderCustomer,
   orderDisplayId,
   orderPayment,
   orderPhone,
-  orderTotalCost,
 } from "../../utils/orderDisplay";
+import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
 import "./OrderPayloadDetailsPage.css";
-
-function normalizeProductList(payload) {
-  if (!payload) return [];
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload.data)) return payload.data;
-  if (Array.isArray(payload.products)) return payload.products;
-  if (payload.data?.data && Array.isArray(payload.data.data)) return payload.data.data;
-  return [];
-}
-
-function sumLineTotals(items) {
-  if (!Array.isArray(items)) return 0;
-  return items.reduce((sum, row) => {
-    const q = Number(row.quantity ?? row.qty ?? 0) || 0;
-    const p = Number(row.price ?? row.unitPrice ?? 0) || 0;
-    return sum + q * p;
-  }, 0);
-}
 
 function cartRowFromOrderItem(item, idx) {
   const sku = String(
@@ -43,6 +42,14 @@ function cartRowFromOrderItem(item, idx) {
   const variant = String(item.variant ?? item.variant_name ?? item.variant_label ?? "");
   const quantity = Number(item.quantity ?? item.qty ?? 1) || 1;
   const price = Number(item.price ?? item.unitPrice ?? 0) || 0;
+  const rawPid =
+    item.product_id ?? item.productId ?? item.product?.id ?? item.product?._id;
+  const rawStr = rawPid != null && rawPid !== "" ? String(rawPid).trim() : "";
+  const num = Number(rawStr);
+  const isPureNumericId =
+    rawStr !== "" && Number.isFinite(num) && num > 0 && String(num) === rawStr;
+  const catalogProductId = isPureNumericId ? num : null;
+  const catalogProductKey = rawStr && !isPureNumericId ? rawStr : "";
   return {
     key: `line-${idx}-${sku || "sku"}-${price}-${quantity}`,
     sku,
@@ -50,6 +57,9 @@ function cartRowFromOrderItem(item, idx) {
     variant,
     quantity,
     price,
+    catalogProductId,
+    catalogProductKey,
+    catalogOptionId: "",
   };
 }
 
@@ -57,6 +67,95 @@ function formatMoney(value) {
   const n = Number(value);
   if (Number.isNaN(n)) return "0";
   return String(Math.round(n * 100) / 100);
+}
+
+/** Parses money from controlled inputs (handles commas, spaces, partial input). */
+function parseNonNegativeMoney(raw) {
+  const s = String(raw ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/,/g, ".");
+  if (s === "" || s === "-" || s === "." || s === "-.") return 0;
+  const n = parseFloat(s);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+const ORDER_STATUS_UI_OPTIONS = [
+  { value: "جديد", label: "قيد المراجعة" },
+  { value: "لاغي", label: "لاغي" },
+  { value: "لا يرد", label: "لا يرد" },
+  { value: "متابعة", label: "متابعة" },
+  { value: "مكرر", label: "مكرر" },
+  { value: "تم التأكيد", label: "تم التأكيد" },
+  { value: "تم الشحن", label: "تم الشحن" },
+];
+
+const ORDER_SOURCE_OPTIONS = [
+  { value: "store", label: "متجر" },
+  { value: "messenger", label: "ماسنجر" },
+  { value: "whatsapp", label: "واتساب" },
+  { value: "lost_order", label: "طلب ضائع" },
+  { value: "old_customer", label: "عميل قديم" },
+];
+
+const ORDER_TYPE_OPTIONS = [
+  { value: "new", label: "أوردر جديد" },
+  { value: "replacement", label: "استبدال" },
+  { value: "return", label: "مرتجع" },
+];
+
+function orderStatusUiLabel(statusValue) {
+  if (statusValue == null || statusValue === "") return "—";
+  const hit = ORDER_STATUS_UI_OPTIONS.find((o) => o.value === statusValue);
+  return hit?.label ?? String(statusValue);
+}
+
+function orderTypeUiLabel(typeValue) {
+  const key = String(typeValue ?? "").trim().toLowerCase();
+  const hit = ORDER_TYPE_OPTIONS.find((o) => o.value === key);
+  return hit?.label ?? String(typeValue ?? "—");
+}
+
+const SHIPPING_STATUS_OPTIONS = [
+  { value: "in_progress", label: "قيد التنفيذ" },
+  { value: "delivered", label: "تم التسليم" },
+  { value: "failed", label: "فشل" },
+];
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: "COD", label: "COD (دفع عند الاستلام)" },
+  { value: "Instapay", label: "إنستاباي" },
+];
+
+function normalizePaymentMethod(value) {
+  const s = String(value ?? "").trim();
+  if (!s) return "COD";
+  const lower = s.toLowerCase();
+  if (lower === "instapay" || lower === "insta pay" || lower.includes("instapay")) {
+    return "Instapay";
+  }
+  if (lower === "cod" || lower === "cash on delivery") return "COD";
+  const match = PAYMENT_METHOD_OPTIONS.find((o) => o.value.toLowerCase() === lower);
+  if (match) return match.value;
+  return "COD";
+}
+
+function normalizeOrderType(value) {
+  const s = String(value ?? "new").trim().toLowerCase();
+  if (s === "replacement" || s === "return" || s === "new") return s;
+  return "new";
+}
+
+function normalizeOrderSource(value) {
+  const s = String(value ?? "store").trim().toLowerCase();
+  const allowed = ORDER_SOURCE_OPTIONS.map((o) => o.value);
+  return allowed.includes(s) ? s : "store";
+}
+
+function normalizeShippingStatus(value) {
+  const s = String(value ?? "in_progress").trim().toLowerCase();
+  if (s === "delivered" || s === "failed" || s === "in_progress") return s;
+  return "in_progress";
 }
 
 function lineSubtotal(row) {
@@ -68,93 +167,40 @@ function lineSubtotal(row) {
 export default function OrderPayloadDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const returnTo = location.state?.returnTo ?? "/orders";
+  const returnTo = location.state?.returnTo ?? appHref("orders");
   const order = location.state?.order ?? null;
+  const ordersListState = location.state?.ordersListState ?? null;
 
-  const [zones, setZones] = useState([]);
-  const [zonesLoading, setZonesLoading] = useState(false);
   const [cartItems, setCartItems] = useState([]);
-  const [catalogProducts, setCatalogProducts] = useState([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [selectedProductId, setSelectedProductId] = useState("");
+  const { catalogProducts, catalogLoading, onCatalogSearchChange } =
+    useProductCatalog(cartItems);
   const [form, setForm] = useState({
     orderAlias: "",
     firstLine: "",
     cityName: "",
     cityId: "",
     districtId: "",
-    codAmount: "",
     note: "",
-    allowToOpenPackage: false,
+    allowToOpenPackage: true,
     firstName: "",
     mobile: "",
     type: "FORWARD",
     shipping_cost: "",
-    payment_method: "",
+    payment_method: "COD",
+    order_type: "new",
+    order_source: "store",
+    shipping_status: "in_progress",
   });
   const [selectedStatus, setSelectedStatus] = useState("");
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState({
+    open: false,
+    variant: "success",
+    message: "",
+  });
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadZones() {
-      try {
-        setZonesLoading(true);
-        const result = await getZones();
-        const list = Array.isArray(result?.data)
-          ? result.data
-          : Array.isArray(result?.zones)
-            ? result.zones
-            : Array.isArray(result)
-              ? result
-              : [];
-        if (!cancelled) {
-          setZones(list);
-        }
-      } catch (e) {
-        console.log(e);
-        if (!cancelled) {
-          setZones([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setZonesLoading(false);
-        }
-      }
-    }
-
-    loadZones();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadCatalog() {
-      try {
-        setCatalogLoading(true);
-        const data = await getProducts({ page: 1, limit: 100 });
-        const list = normalizeProductList(data);
-        if (!cancelled) setCatalogProducts(list);
-      } catch (e) {
-        console.log(e);
-        if (!cancelled) setCatalogProducts([]);
-      } finally {
-        if (!cancelled) setCatalogLoading(false);
-      }
-    }
-
-    loadCatalog();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!order) return;
@@ -167,10 +213,6 @@ export default function OrderPayloadDetailsPage() {
 
     setCartItems(sourceItems.map((item, idx) => cartRowFromOrderItem(item, idx)));
 
-    const fromLines = sourceItems.length > 0 ? sumLineTotals(sourceItems) : null;
-    const codFallback =
-      orderTotalCost(order) ?? (fromLines != null && fromLines > 0 ? fromLines : null) ?? 100;
-
     setForm((prev) => ({
       ...prev,
       orderAlias: order.alias ?? order.shortId ?? "sec_order",
@@ -178,9 +220,8 @@ export default function OrderPayloadDetailsPage() {
         orderAddress(order) !== "—"
           ? orderAddress(order)
           : "102 street mohamed abd el shafy, alexandria",
-      cityName: order.city ?? "",
-      codAmount: String(codFallback),
-      note: order.note ?? "deliver note",
+      cityName: getOrderGovernmentName(order),
+      note: String(order.note ?? order.notes ?? "").trim(),
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
       shipping_cost: String(
@@ -190,11 +231,16 @@ export default function OrderPayloadDetailsPage() {
           order.totals?.shippingCost ??
           "",
       ),
-      payment_method: String(
+      payment_method: normalizePaymentMethod(
         order.payment_method ??
           order["Payment Method"] ??
           order.totals?.paymentMethod ??
           (orderPayment(order) !== "—" ? orderPayment(order) : "COD"),
+      ),
+      order_type: normalizeOrderType(order.order_type ?? order.orderType),
+      order_source: normalizeOrderSource(order.order_source ?? order.orderSource),
+      shipping_status: normalizeShippingStatus(
+        order.shipping_status ?? order.shippingStatus,
       ),
     }));
   }, [order]);
@@ -204,29 +250,20 @@ export default function OrderPayloadDetailsPage() {
     [cartItems],
   );
 
-  const districts = useMemo(() => {
-    const selectedCity = zones.find(
-      (zone) =>
-        String(zone?._id ?? zone?.id ?? "") === String(form.cityId) ||
-        String(zone?.zoneId ?? "") === String(form.cityId)
-    );
-    const list = selectedCity?.districts ?? selectedCity?.areas ?? [];
-    return Array.isArray(list) ? list : [];
-  }, [zones, form.cityId]);
+  const shippingNum = useMemo(
+    () => parseNonNegativeMoney(form.shipping_cost),
+    [form.shipping_cost],
+  );
 
-  useEffect(() => {
-    const selectedCity = zones.find(
-      (zone) =>
-        String(zone?._id ?? zone?.id ?? "") === String(form.cityId) ||
-        String(zone?.zoneId ?? "") === String(form.cityId)
-    );
-    if (!selectedCity) return;
+  const grandTotalSuggested = useMemo(
+    () => itemsSubtotal + shippingNum,
+    [itemsSubtotal, shippingNum],
+  );
 
-    setForm((prev) => ({
-      ...prev,
-      cityName: selectedCity.name ?? selectedCity.zoneName ?? prev.cityName,
-    }));
-  }, [form.cityId, zones]);
+  const collectionTotalDisplay = useMemo(
+    () => formatMoney(grandTotalSuggested),
+    [grandTotalSuggested],
+  );
 
   function setField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -242,53 +279,43 @@ export default function OrderPayloadDetailsPage() {
     setCartItems((prev) => prev.filter((row) => row.key !== rowKey));
   }
 
-  function addSelectedProductToCart() {
-    if (!selectedProductId) return;
-    const product = catalogProducts.find(
-      (p, idx) =>
-        String(p.id ?? p._id ?? p.sku ?? `idx-${idx}`) === selectedProductId,
-    );
-    if (!product) return;
-
-    let rd = product.raw_data;
-    if (typeof rd === "string") {
-      try {
-        rd = JSON.parse(rd);
-      } catch {
-        rd = {};
-      }
-    }
-    rd = rd && typeof rd === "object" && !Array.isArray(rd) ? rd : {};
-
-    const name = String(product.name ?? product.title ?? rd.name ?? rd.title ?? "");
-    const sku = String(
-      product.sku ?? product.taager_code ?? rd.sku ?? product.id ?? product._id ?? "",
-    );
-    const price = Number(product.price ?? rd.price ?? 0) || 0;
-
-    setCartItems((prev) => [
-      ...prev,
-      {
-        key: `add-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        sku,
-        name,
-        quantity: 1,
-        price,
-      },
-    ]);
-    setSelectedProductId("");
+  function addCartRowAtEnd() {
+    setCartItems((prev) => [...prev, createEmptyCartRow()]);
   }
 
-  function applyItemsTotalToCod() {
-    setForm((prev) => {
-      const shipping = Number(prev.shipping_cost) || 0;
-      const suggested = itemsSubtotal + shipping;
-      return { ...prev, codAmount: formatMoney(suggested) };
+  function addCartRowBelow(rowKey) {
+    const newRow = createEmptyCartRow();
+    setCartItems((prev) => {
+      const i = prev.findIndex((r) => r.key === rowKey);
+      if (i === -1) return [...prev, newRow];
+      return [...prev.slice(0, i + 1), newRow, ...prev.slice(i + 1)];
     });
   }
 
+  function handleRowCatalogSelect(rowKey, optionId) {
+    if (!optionId) {
+      updateCartRow(rowKey, {
+        sku: "",
+        name: "",
+        price: "",
+        catalogProductId: null,
+        catalogProductKey: "",
+        catalogOptionId: "",
+      });
+      return;
+    }
+    const idx = catalogProducts.findIndex(
+      (p, i) => productOptionId(p, i) === optionId,
+    );
+    if (idx === -1) return;
+    const fields = productToCartFields(catalogProducts[idx]);
+    updateCartRow(rowKey, { ...fields, price: "", catalogOptionId: optionId });
+  }
+
   function handleBack() {
-    navigate(returnTo);
+    navigate(returnTo, {
+      state: ordersListState ? { ordersListState } : undefined,
+    });
   }
 
   const orderIdForStatusUpdate =
@@ -354,15 +381,7 @@ export default function OrderPayloadDetailsPage() {
     const rawStatus =
       item.status ?? item.toStatus ?? item.newStatus ?? item.orderStatus ?? item.label;
     const status = rawStatus ? mapBackendStatusToUi(rawStatus) : "—";
-    const user =
-      item.userName ??
-      item.user_name ??
-      item.updatedByName ??
-      item.updated_by_name ??
-      item.createdByName ??
-      item.created_by_name ??
-      item.user ??
-      "—";
+    const user = resolveActorDisplayName(item) ?? "—";
     const timestamp =
       item.timestamp ??
       item.updatedAt ??
@@ -371,17 +390,6 @@ export default function OrderPayloadDetailsPage() {
       item.created_at ??
       null;
     return { status, user, timestamp };
-  }
-
-  function getActiveUserName() {
-    try {
-      const raw = localStorage.getItem("easyorder_user");
-      if (!raw) return "المستخدم الحالي";
-      const parsed = JSON.parse(raw);
-      return parsed?.name ?? parsed?.full_name ?? parsed?.email ?? "المستخدم الحالي";
-    } catch {
-      return "المستخدم الحالي";
-    }
   }
 
   function resolveStatusFromAllowed(statusLabel, allowedStatuses = []) {
@@ -424,7 +432,7 @@ export default function OrderPayloadDetailsPage() {
       setLocalStatusHistory((prev) => [
         {
           status: statusLabel,
-          user: getActiveUserName(),
+          user: getActiveUserDisplayName(),
           timestamp: new Date().toISOString(),
         },
         ...prev,
@@ -439,6 +447,14 @@ export default function OrderPayloadDetailsPage() {
         try {
           await updateOrderStatus(orderIdForStatusUpdate, retryStatus);
           setSelectedStatus(statusLabel);
+          setLocalStatusHistory((prev) => [
+            {
+              status: statusLabel,
+              user: getActiveUserDisplayName(),
+              timestamp: new Date().toISOString(),
+            },
+            ...prev,
+          ]);
           return true;
         } catch (retryError) {
           console.log(retryError);
@@ -492,6 +508,15 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
+    const linesForPayload = cartItems.filter(
+      (row) =>
+        String(row.name ?? "").trim() !== "" || String(row.sku ?? "").trim() !== "",
+    );
+    if (linesForPayload.length === 0) {
+      alert("أضيفي صفاً واختاري منتجاً من القائمة");
+      return;
+    }
+
     const initialStatus =
       order?.orderStatus ??
       order?.order_status ??
@@ -500,31 +525,63 @@ export default function OrderPayloadDetailsPage() {
       "جديد";
     const uiStatusForSave = selectedStatus || mapBackendStatusToUi(initialStatus) || "جديد";
     const backendStatus = backendStatusMap[uiStatusForSave] ?? "new";
-    const cartPayload = cartItems.map(({ sku, name, quantity, price }) => ({
-      sku,
-      skuCode: sku,
-      product_name: name,
-      quantity: Number(quantity) || 1,
-      price: Number(price) || 0,
-    }));
+    const showShipFields = uiStatusForSave === "تم الشحن";
+    const cartPayload = linesForPayload.map((row) => {
+      const line = {
+        sku: row.sku,
+        skuCode: row.sku,
+        product_name: row.name,
+        quantity: Number(row.quantity) || 1,
+        price: Number(row.price) || 0,
+      };
+      if (row.catalogProductId != null) {
+        line.product_id = row.catalogProductId;
+      } else if (row.catalogProductKey) {
+        line.product_id = row.catalogProductKey;
+      } else if (row.catalogOptionId) {
+        const pi = catalogProducts.findIndex(
+          (p, i) => productOptionId(p, i) === row.catalogOptionId,
+        );
+        if (pi !== -1) {
+          const p = unwrapCatalogProduct(catalogProducts[pi]);
+          const rid =
+            p?.id ?? p?._id ?? p?.easyorder_id ?? parseProductRawData(p).id;
+          if (rid != null && rid !== "") line.product_id = rid;
+        }
+      }
+      return line;
+    });
     const payload = {
       full_name: form.firstName,
       phone: form.mobile,
       cityName: form.cityName,
+      address: form.firstLine,
       status: backendStatus,
       cart_items: cartPayload,
-      shipping_cost: Number(form.shipping_cost) || 0,
+      shipping_cost: parseNonNegativeMoney(form.shipping_cost),
       payment_method: form.payment_method,
+      order_source: form.order_source,
+      order_type: form.order_type,
+      note: String(form.note ?? "").trim(),
+      ...(showShipFields ? { shipping_status: form.shipping_status } : {}),
     };
 
     try {
       setSavingOrder(true);
       await updateOrder(orderIdForStatusUpdate, payload);
-      alert("تم حفظ تعديلات الطلب بنجاح");
+      setFeedbackModal({
+        open: true,
+        variant: "success",
+        message: "تم حفظ تعديلات الطلب بنجاح",
+      });
     } catch (error) {
       console.log(error);
       const message = error?.response?.data?.message ?? "تعذر حفظ التعديلات";
-      alert(message);
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message,
+      });
     } finally {
       setSavingOrder(false);
     }
@@ -557,21 +614,19 @@ export default function OrderPayloadDetailsPage() {
     return [
       {
         status: currentOrderStatus,
-        user:
-          order.updatedByName ??
-          order.updated_by_name ??
-          order.createdByName ??
-          order.created_by_name ??
-          "غير معروف",
+        user: resolveActorDisplayName(order) ?? "غير معروف",
         timestamp: order.updated_at ?? order.created_at ?? order.date ?? null,
       },
     ];
   }, [backendStatusHistory, currentOrderStatus, localStatusHistory, order]);
 
-  const lastUpdateBy = order ? statusHistory[0]?.user ?? "غير معروف" : "غير معروف";
-
-  const shippingNum = Number(form.shipping_cost) || 0;
-  const grandTotalSuggested = itemsSubtotal + shippingNum;
+  const lastUpdateBy = order
+    ? (() => {
+        const u = statusHistory[0]?.user;
+        if (u && u !== "—") return u;
+        return resolveActorDisplayName(order) ?? "غير معروف";
+      })()
+    : "غير معروف";
 
   if (!order) {
     return (
@@ -598,7 +653,6 @@ export default function OrderPayloadDetailsPage() {
     جديد: "#7f8c8d",
   };
   const statusBadgeColor = statusColorMap[currentOrderStatus] ?? "#7f8c8d";
-  const summaryCod = form.codAmount || String(orderTotalCost(order) ?? "0");
 
   return (
     <div className="order-details-page">
@@ -606,82 +660,125 @@ export default function OrderPayloadDetailsPage() {
         <div className="order-details-page__title">
           <h1>تفاصيل الطلب #{orderDisplayId(order)}</h1>
           <span className="order-details-page__badge" style={{ background: statusBadgeColor }}>
-            {currentOrderStatus}
+            {orderStatusUiLabel(currentOrderStatus)}
           </span>
         </div>
         <span className="order-details-page__updated-by">آخر تحديث بواسطة: {lastUpdateBy}</span>
-        <button
-          type="button"
-          onClick={handleBack}
-          className="order-details-page__btn order-details-page__btn--outline"
-        >
-          رجوع
-        </button>
+        <div className="order-details-page__topbar-actions">
+          <div
+            className="order-details-page__topbar-quick-fields"
+            aria-label="حالة الطلب والنوع والمصدر"
+          >
+            <label className="order-details-page__topbar-mini-field">
+              <span className="order-details-page__topbar-mini-label">حالة الطلب</span>
+              <select
+                className="order-details-page__input order-details-page__input--topbar-compact"
+                value={selectedStatus || mapBackendStatusToUi(initialOrderStatus)}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+              >
+                {ORDER_STATUS_UI_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="order-details-page__topbar-mini-field">
+              <span className="order-details-page__topbar-mini-label">نوع الطلب</span>
+              <select
+                className="order-details-page__input order-details-page__input--topbar-compact"
+                value={form.order_type}
+                onChange={(e) => setField("order_type", e.target.value)}
+              >
+                {ORDER_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="order-details-page__topbar-mini-field">
+              <span className="order-details-page__topbar-mini-label">مصدر الطلب</span>
+              <select
+                className="order-details-page__input order-details-page__input--topbar-compact"
+                value={form.order_source}
+                onChange={(e) => setField("order_source", e.target.value)}
+              >
+                {ORDER_SOURCE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {currentOrderStatus === "تم الشحن" ? (
+              <label className="order-details-page__topbar-mini-field">
+                <span className="order-details-page__topbar-mini-label">حالة الشحن</span>
+                <select
+                  className="order-details-page__input order-details-page__input--topbar-compact"
+                  value={form.shipping_status}
+                  onChange={(e) => setField("shipping_status", e.target.value)}
+                >
+                  {SHIPPING_STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveOrderChanges}
+            disabled={savingOrder}
+            className="order-details-page__btn order-details-page__btn--primary"
+          >
+            {savingOrder ? "جاري الحفظ..." : "حفظ تعديلات الطلب"}
+          </button>
+          <button
+            type="button"
+            onClick={handleBack}
+            className="order-details-page__btn order-details-page__btn--outline"
+          >
+            رجوع
+          </button>
+        </div>
       </div>
 
       <div className="order-details-page__layout">
         <div>
           <section className="order-details-page__card">
             <h3>عناصر السلة</h3>
-            <div className="order-details-page__cart-toolbar">
-              <select
-                className="order-details-page__input order-details-page__input--grow"
-                value={selectedProductId}
-                onChange={(e) => setSelectedProductId(e.target.value)}
-                disabled={catalogLoading}
-              >
-                <option value="">
-                  {catalogLoading ? "جاري تحميل المنتجات..." : "اختر منتجاً لإضافته للطلب"}
-                </option>
-                {catalogProducts.map((p, idx) => {
-                  const optId = String(p.id ?? p._id ?? p.sku ?? `idx-${idx}`);
-                  const label = `${p.name ?? p.title ?? optId} (${p.sku ?? "—"})`;
-                  return (
-                    <option key={optId} value={optId}>
-                      {label}
-                    </option>
-                  );
-                })}
-              </select>
-              <button
-                type="button"
-                className="order-details-page__btn order-details-page__btn--outline"
-                onClick={addSelectedProductToCart}
-                disabled={!selectedProductId || catalogLoading}
-              >
-                إضافة للطلب
-              </button>
-            </div>
+
             {cartItems.length === 0 ? (
-              <p className="order-details-page__cart-empty">لا توجد عناصر. أضيفي منتجات من القائمة.</p>
+              <p className="order-details-page__cart-empty">
+                لا توجد عناصر. اضغطي «إضافة صف» ثم اختاري المنتج من القائمة في كل سطر.
+              </p>
             ) : (
               <div className="order-details-page__cart-table-wrap">
                 <table className="order-details-page__cart-table">
                   <thead>
                     <tr>
                       <th>المنتج</th>
-                      <th>SKU</th>
                       <th>الكمية</th>
                       <th>سعر الوحدة</th>
                       <th>الإجمالي</th>
-                      <th />
+                      <th>إجراءات</th>
                     </tr>
                   </thead>
                   <tbody>
                     {cartItems.map((row) => (
                       <tr key={row.key}>
                         <td>
-                          <input
-                            className="order-details-page__input order-details-page__input--table"
-                            value={row.name}
-                            onChange={(e) => updateCartRow(row.key, { name: e.target.value })}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="order-details-page__input order-details-page__input--table"
-                            value={row.sku}
-                            onChange={(e) => updateCartRow(row.key, { sku: e.target.value })}
+                          <CartProductSelect
+                            row={row}
+                            catalogProducts={catalogProducts}
+                            catalogLoading={catalogLoading}
+                            onSearchChange={onCatalogSearchChange}
+                            onSelect={(optionId) =>
+                              handleRowCatalogSelect(row.key, optionId)
+                            }
                           />
                         </td>
                         <td>
@@ -703,21 +800,34 @@ export default function OrderPayloadDetailsPage() {
                             type="number"
                             min={0}
                             step="0.01"
-                            value={row.price}
-                            onChange={(e) =>
-                              updateCartRow(row.key, { price: Number(e.target.value) || 0 })
-                            }
+                            value={row.price === "" || row.price == null ? "" : row.price}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              updateCartRow(row.key, {
+                                price: raw === "" ? "" : Number(raw),
+                              });
+                            }}
                           />
                         </td>
                         <td>{formatMoney(lineSubtotal(row))} ج</td>
                         <td>
-                          <button
-                            type="button"
-                            className="order-details-page__btn order-details-page__btn--outline order-details-page__btn--small"
-                            onClick={() => removeCartRow(row.key)}
-                          >
-                            حذف
-                          </button>
+                          <div className="order-details-page__cart-row-actions">
+                            <button
+                              type="button"
+                              className="order-details-page__btn order-details-page__btn--small order-details-page__btn--cart-delete"
+                              onClick={() => removeCartRow(row.key)}
+                            >
+                              حذف
+                            </button>
+                            <button
+                              type="button"
+                              className="order-details-page__btn order-details-page__btn--small order-details-page__btn--cart-add"
+                              onClick={() => addCartRowBelow(row.key)}
+                              disabled={catalogLoading}
+                            >
+                              إضافة
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -725,140 +835,124 @@ export default function OrderPayloadDetailsPage() {
                 </table>
               </div>
             )}
-            <p className="order-details-page__cart-subtotal">
-              مجموع المنتجات: <strong>{formatMoney(itemsSubtotal)} ج</strong>
-              {" · "}
-              مع الشحن: <strong>{formatMoney(grandTotalSuggested)} ج</strong>
-            </p>
+           <div className="order-details-page__fields-row order-details-page__fields-row--tri">
+             
+             <label className="order-details-page__field">
+               تكلفة الشحن 
+               <input
+                 className="order-details-page__input"
+                 type="number"
+                 min={0}
+                 step="0.01"
+                 value={form.shipping_cost}
+                 onChange={(e) => setField("shipping_cost", e.target.value)}
+               />
+             </label>
+             <label className="order-details-page__field">
+               مبلغ التحصيل
+               <div
+                 className="order-details-page__input order-details-page__input--computed"
+                 role="status"
+                 aria-live="polite"
+                 aria-atomic="true"
+                 title="يُحسب تلقائياً من مجموع المنتجات وتكلفة الشحن"
+               >
+                 {collectionTotalDisplay}
+               </div>
+             </label>
+             <label className="order-details-page__field">
+               طريقة الدفع 
+               <select
+                 className="order-details-page__input"
+                 value={form.payment_method}
+                 onChange={(e) => setField("payment_method", e.target.value)}
+               >
+                 {PAYMENT_METHOD_OPTIONS.map((o) => (
+                   <option key={o.value} value={o.value}>
+                     {o.label}
+                   </option>
+                 ))}
+               </select>
+             </label>
+           </div>
           </section>
 
           <section className="order-details-page__card">
             <h3>بيانات الطلب</h3>
             <div className="order-details-page__fields">
-              <label className="order-details-page__field">
-                مبلغ التحصيل (COD)
-                <input
-                  className="order-details-page__input"
-                  value={form.codAmount}
-                  onChange={(e) => setField("codAmount", e.target.value)}
-                />
-              </label>
              
-              <label className="order-details-page__field">
-                تكلفة الشحن (shipping_cost)
+              <div className="order-details-page__fields-row order-details-page__fields-row--duo">
+                <label className="order-details-page__field">
+                  اسم العميل
+                  <input
+                    className="order-details-page__input"
+                    value={form.firstName}
+                    onChange={(e) => setField("firstName", e.target.value)}
+                  />
+                </label>
+                <label className="order-details-page__field">
+                  رقم الموبايل
+                  <input
+                    className="order-details-page__input"
+                    value={form.mobile}
+                    onChange={(e) => setField("mobile", e.target.value)}
+                  />
+                </label>
+              </div>
+              <BostaCityDistrictFields
+                cityId={form.cityId}
+                districtId={form.districtId}
+                cityNameHint={form.cityName}
+                districtNameHint={parseDistrictHintFromAddress(
+                  orderAddress(order) !== "—" ? orderAddress(order) : form.firstLine,
+                  form.cityName,
+                )}
+                onCityChange={(cityId, cityOption) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    cityId,
+                    districtId: "",
+                    cityName: cityOption ? bostaCityLabel(cityOption) : prev.cityName,
+                  }))
+                }
+                onDistrictChange={(districtId) => setField("districtId", districtId)}
+              />
+              <label className="order-details-page__field order-details-page__field--full order-details-page__field--checkbox-row">
+                <span>السماح بفتح الشحنة</span>
                 <input
-                  className="order-details-page__input"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.shipping_cost}
-                  onChange={(e) => setField("shipping_cost", e.target.value)}
-                />
-              </label>
-              <label className="order-details-page__field">
-                طريقة الدفع (payment_method)
-                <input
-                  className="order-details-page__input"
-                  value={form.payment_method}
-                  onChange={(e) => setField("payment_method", e.target.value)}
-                  placeholder="مثال: COD، prepaid، card"
+                  type="checkbox"
+                  className="order-details-page__checkbox-input"
+                  checked={Boolean(form.allowToOpenPackage)}
+                  onChange={(e) => setField("allowToOpenPackage", e.target.checked)}
                 />
               </label>
               <label className="order-details-page__field order-details-page__field--full">
-                العنوان (السطر الأول)
+                العنوان
                 <input
                   className="order-details-page__input"
                   value={form.firstLine}
                   onChange={(e) => setField("firstLine", e.target.value)}
                 />
               </label>
-              <label className="order-details-page__field">
-                المدينة
-                <select
-                  className="order-details-page__input"
-                  value={form.cityId}
-                  onChange={(e) => {
-                    setField("cityId", e.target.value);
-                    setField("districtId", "");
-                  }}
-                  disabled={zonesLoading}
-                >
-                  <option value="">اختر المدينة</option>
-                  {zones.map((zone) => {
-                    const id = zone?._id ?? zone?.id ?? zone?.zoneId;
-                    return (
-                      <option key={id} value={id}>
-                        {zone?.name ?? zone?.zoneName ?? "—"}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-              <label className="order-details-page__field">
-                المنطقة
-                <select
-                  className="order-details-page__input"
-                  value={form.districtId}
-                  onChange={(e) => setField("districtId", e.target.value)}
-                  disabled={!form.cityId}
-                >
-                  <option value="">اختر المنطقة</option>
-                  {districts.map((district) => {
-                    const id = district?._id ?? district?.id ?? district?.districtId;
-                    return (
-                      <option key={id} value={id}>
-                        {district?.name ?? district?.districtName ?? "—"}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-              <label className="order-details-page__field">
-                السماح بفتح الشحنة
-                <select
-                  className="order-details-page__input"
-                  value={String(form.allowToOpenPackage)}
-                  onChange={(e) =>
-                    setField("allowToOpenPackage", e.target.value === "true")
-                  }
-                >
-                  <option value="true">true</option>
-                  <option value="false">false</option>
-
-                </select>
-              </label>
-              <label className="order-details-page__field">
-                اسم العميل
-                <input
-                  className="order-details-page__input"
-                  value={form.firstName}
-                  onChange={(e) => setField("firstName", e.target.value)}
-                />
-              </label>
-              <label className="order-details-page__field">
-                رقم الموبايل
-                <input
-                  className="order-details-page__input"
-                  value={form.mobile}
-                  onChange={(e) => setField("mobile", e.target.value)}
-                />
-              </label>
               <label className="order-details-page__field order-details-page__field--full">
                 ملاحظات
-                <input
-                  className="order-details-page__input"
+                <textarea
+                  className="order-details-page__input order-details-page__note"
                   value={form.note}
                   onChange={(e) => setField("note", e.target.value)}
+                  placeholder="ملاحظات على الطلب (اختياري)"
+                  rows={3}
                 />
               </label>
             </div>
+            
           </section>
 
           <section className="order-details-page__card">
   
             {selectedStatus && (
               <p className="order-details-page__status-note">
-                الحالة الحالية: <strong>{selectedStatus}</strong>
+                الحالة الحالية: <strong>{orderStatusUiLabel(selectedStatus)}</strong>
               </p>
             )}
           </section>
@@ -868,7 +962,7 @@ export default function OrderPayloadDetailsPage() {
             <ul className="order-details-page__history-list">
               {statusHistory.map((entry, index) => (
                 <li key={`${entry.status}-${entry.timestamp}-${index}`} className="order-details-page__history-item">
-                  <strong>{entry.status}</strong>
+                  <strong>{orderStatusUiLabel(entry.status)}</strong>
                   <span>{entry.user}</span>
                   <time>{formatHistoryTime(entry.timestamp)}</time>
                 </li>
@@ -889,6 +983,14 @@ export default function OrderPayloadDetailsPage() {
               <strong>{form.mobile || "—"}</strong>
             </div>
             <div className="order-details-page__summary-row">
+              <span>حالة الطلب</span>
+              <strong>{orderStatusUiLabel(currentOrderStatus)}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>نوع الطلب</span>
+              <strong>{orderTypeUiLabel(form.order_type)}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
               <span>عدد بنود السلة</span>
               <strong>{cartItems.length}</strong>
             </div>
@@ -904,54 +1006,23 @@ export default function OrderPayloadDetailsPage() {
               <span>طريقة الدفع</span>
               <strong>{form.payment_method || "—"}</strong>
             </div>
+           
             <div className="order-details-page__summary-row">
-              <span>منتجات + شحن</span>
-              <strong>{formatMoney(grandTotalSuggested)} ج</strong>
-            </div>
-            <div className="order-details-page__summary-row">
-              <span>مبلغ التحصيل (COD)</span>
-              <strong>{summaryCod} ج</strong>
+              <span>مبلغ التحصيل</span>
+              <strong>{collectionTotalDisplay} ج</strong>
             </div>
           </div>
         </aside>
       </div>
-      {/* <h3>تغيير الحالة</h3> */}
-      <section className="order-details-page__actions-bar">
-        <div className="order-details-page__status-actions">
-          {statusButtons.map((status) => (
-            <button
-              key={status.key}
-              type="button"
-              onClick={() => handleStatusClick(status.label)}
-              disabled={statusUpdating}
-              className="order-details-page__pill"
-              style={{ background: status.bg, opacity: statusUpdating ? 0.7 : 1 }}
-            >
-              {status.label}
-            </button>
-          ))}
+      <FeedbackModal
+        open={feedbackModal.open}
+        variant={feedbackModal.variant}
+        message={feedbackModal.message}
+        onClose={() =>
+          setFeedbackModal((prev) => ({ ...prev, open: false }))
+        }
+      />
 
-          <button
-            type="button"
-            onClick={handleConfirmOnly}
-            disabled={statusUpdating}
-            className="order-details-page__pill"
-            style={{ background: "#16a085", opacity: statusUpdating ? 0.7 : 1 }}
-          >
-            تم التأكيد
-          </button>
-        </div>
-        <div className="order-details-page__footer order-details-page__footer--bar">
-          <button
-            type="button"
-            onClick={handleSaveOrderChanges}
-            disabled={savingOrder}
-            className="order-details-page__btn order-details-page__btn--primary"
-          >
-            {savingOrder ? "جاري الحفظ..." : "حفظ تعديلات الطلب"}
-          </button>
-        </div>
-      </section>
       {isConfirmModalOpen && (
         <div
           style={{

@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { appHref } from "../../utils/auth";
 import { getProducts } from "../../api/ordersApi";
 import { colors } from "../../constants/colors";
+import { normalizeProductListFromApi } from "../../utils/normalizeProductListFromApi";
 import "./ProductsPage.css";
-
-function normalizeProductList(payload) {
-  if (!payload) return [];
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload.data)) return payload.data;
-  if (Array.isArray(payload.products)) return payload.products;
-  if (payload.data?.data && Array.isArray(payload.data.data))
-    return payload.data.data;
-  return [];
-}
 
 /** يقرأ كائن raw_data أو يفكّه لو كان نص JSON (احتياطي) */
 function getRawDataFields(item) {
@@ -57,11 +49,24 @@ function getProductDisplayFields(item) {
         ? rd.quantity
         : null;
 
+  let warrantyLabel = "";
+  const w = item?.warranty ?? rd.warranty ?? rd.warranty_label;
+  if (w != null && String(w).trim()) {
+    warrantyLabel = String(w).trim();
+  } else {
+    const years = rd.warranty_years ?? item?.warranty_years;
+    const n = Number(years);
+    if (Number.isFinite(n) && n > 0) {
+      warrantyLabel = n === 1 ? "ضمان سنة" : `ضمان ${n} سنوات`;
+    }
+  }
+
   return {
     name,
     priceLabel: price != null ? `${price}` : "—",
     thumbUrl,
     quantityLabel: quantity != null ? String(quantity) : "—",
+    warrantyLabel,
   };
 }
 
@@ -119,7 +124,7 @@ export default function ProductsPage() {
     setPage(1);
   }
 
-  const products = useMemo(() => normalizeProductList(raw), [raw]);
+  const products = useMemo(() => normalizeProductListFromApi(raw), [raw]);
 
   const totalPages =
     raw?.totalPages ??
@@ -135,7 +140,7 @@ export default function ProductsPage() {
           <h1>المنتجات</h1>
           <p>إدارة وعرض منتجات المتجر بشكل حديث وسريع.</p>
         </div>
-        <Link to="/products/create" className="products-page__add-btn">
+        <Link to={appHref("products/create")} className="products-page__add-btn">
           + إضافة منتج
         </Link>
       </section>
@@ -173,27 +178,51 @@ export default function ProductsPage() {
           <div className="products-grid">
             {products.map((item, index) => {
               const id = item?.id ?? item?._id ?? item?.sku ?? index;
-              const { name, priceLabel, thumbUrl } = getProductDisplayFields(item);
+              const { name, priceLabel, thumbUrl, warrantyLabel } =
+                getProductDisplayFields(item);
               const editId = item?.id ?? item?._id;
+              const displayName = String(name ?? "—").trim() || "—";
               return (
                 <article key={String(id)} className="product-card">
+                  <header className="product-card__ribbon" title={displayName}>
+                    <h2 className="product-card__ribbon-title">{displayName}</h2>
+                  </header>
+
                   <div className="product-card__image-wrap">
                     {thumbUrl ? (
-                      <img src={thumbUrl} alt={name} className="product-card__image" />
+                      <img src={thumbUrl} alt={displayName} className="product-card__image" />
                     ) : (
                       <span className="product-card__image-placeholder">لا توجد صورة</span>
                     )}
                   </div>
 
-                  <div className="product-card__content">
-                    <h3>{name}</h3>
-                    <p>{priceLabel !== "—" ? `${priceLabel} ج` : "—"}</p>
+                  <div className="product-card__body">
+                    <div className="product-card__title-row">
+                      <h3 className="product-card__title">{displayName}</h3>
+                      {warrantyLabel ? (
+                        <span className="product-card__warranty">{warrantyLabel}</span>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div className="product-card__actions">
+                  <div className="product-card__price-bar">
+                    <span className="product-card__price">
+                      {priceLabel !== "—" ? `${priceLabel} ج` : "—"}
+                    </span>
                     {editId != null ? (
                       <Link
-                        to={`/products/${encodeURIComponent(String(editId))}/edit`}
+                        to={appHref(`products/${encodeURIComponent(String(editId))}/edit`)}
+                        className="product-card__edit-link"
+                      >
+                        تعديل
+                      </Link>
+                    ) : null}
+                  </div>
+
+                  {/* <div className="product-card__actions">
+                    {editId != null ? (
+                      <Link
+                        to={appHref(`products/${encodeURIComponent(String(editId))}/edit`)}
                         className="product-card__action-btn product-card__action-btn--edit"
                       >
                         ✏️ تعديل
@@ -215,7 +244,7 @@ export default function ProductsPage() {
                     >
                       🗑 حذف
                     </button>
-                  </div>
+                  </div> */}
                 </article>
               );
             })}

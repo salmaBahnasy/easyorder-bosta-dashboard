@@ -1,36 +1,82 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getEmployees, getOrders } from "../../api/ordersApi";
+import {
+  getEmployees,
+  getOrders,
+  getProducts,
+  resolveEmployeeOrderFilterParams,
+} from "../../api/ordersApi";
+import { appHref } from "../../utils/auth";
 import OrdersTable from "../../components/OrdersTable";
+import { orderRowKey } from "../../utils/orderDisplay";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
+import {
+  getProductFilterId,
+  getProductListLabel,
+  normalizeProductList,
+} from "../../utils/ordersFilterProductOptions";
+import {
+  clearOrdersListState,
+  getDefaultOrdersFilters,
+  resolveOrdersListBootState,
+  writeOrdersListState,
+} from "../../utils/ordersListState";
 import "./OrdersPage.css";
 
 export default function OrdersPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const bootStateRef = useRef(null);
+  if (bootStateRef.current === null) {
+    bootStateRef.current = resolveOrdersListBootState(location.state);
+  }
+
   const [orders, setOrders] = useState([]);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(20);
+  const [page, setPage] = useState(() => bootStateRef.current.page);
+  const [limit] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
-  const [filters, setFilters] = useState({
-    status: "",
-    employee: "",
-    from: "",
-    to: "",
-  });
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [filters, setFilters] = useState(() => bootStateRef.current.filters);
+  const [highlightOrderId, setHighlightOrderId] = useState(
+    () => bootStateRef.current.focusedOrderId ?? null,
+  );
 
   const statusOptions = [
     { value: "", label: "كل الحالات" },
-    { value: "new", label: "جديد" },
+    { value: "new", label: "قيد المراجعة" },
     { value: "canceled", label: "لاغي" },
     { value: "no_replay", label: "لا يرد" },
     { value: "follow up", label: "متابعة" },
     { value: "repeater", label: "مكرر" },
     { value: "Confirmed", label: "تم التأكيد" },
     { value: "Shipped", label: "تم الشحن" },
+  ];
+
+  const orderSourceOptions = [
+    { value: "", label: "كل المصادر" },
+    { value: "store", label: "متجر" },
+    { value: "messenger", label: "ماسنجر" },
+    { value: "whatsapp", label: "واتساب" },
+    { value: "lost_order", label: "طلب ضائع" },
+    { value: "old_customer", label: "عميل قديم" },
+  ];
+
+  const orderTypeOptions = [
+    { value: "", label: "كل الأنواع" },
+    { value: "new", label: "أوردر جديد" },
+    { value: "replacement", label: "استبدال" },
+    { value: "return", label: "مرتجع" },
+  ];
+
+  const shippingStatusOptions = [
+    { value: "", label: "كل حالات الشحن" },
+    { value: "in_progress", label: "قيد التنفيذ" },
+    { value: "delivered", label: "تم التسليم" },
+    { value: "failed", label: "فشل" },
   ];
 
   function normalizeStatus(value) {
@@ -82,7 +128,7 @@ export default function OrdersPage() {
       repeater: ["duplicate", "مكرر"],
       confirmed: ["تم التأكيد"],
       shipped: ["تم الشحن"],
-      new: ["جديد"],
+      new: ["جديد", "قيد المراجعة"],
     };
 
     const selectedAliases = aliases[selected] ?? [];
@@ -93,20 +139,30 @@ export default function OrdersPage() {
     try {
       setLoading(true);
 
+      const employeeId = String(nextFilters.employee ?? "").trim();
+
       const result = await getOrders({
         page: pageNumber,
         limit,
         status: nextFilters.status || undefined,
-        employeeId: nextFilters.employee || undefined,
+        ...resolveEmployeeOrderFilterParams(employees, employeeId),
         from: nextFilters.from || undefined,
         to: nextFilters.to || undefined,
+        order_source: nextFilters.order_source || undefined,
+        order_type: nextFilters.order_type || undefined,
+        shipping_status: nextFilters.shipping_status || undefined,
+        product_id: nextFilters.product_id?.trim() || undefined,
+        phone: nextFilters.phone?.trim() || undefined,
+        customer_name: nextFilters.customer_name?.trim() || undefined,
       });
 
       const { list, page, total, totalPages } = parseOrdersResponse(result);
+      const resolvedPage = page ?? pageNumber;
       setOrders(list);
-      setPage(page ?? pageNumber);
+      setPage(resolvedPage);
       setTotal(total ?? list.length);
       setTotalPages(totalPages ?? 1);
+      writeOrdersListState({ filters: nextFilters, page: resolvedPage });
     } catch (error) {
       console.log(error);
       alert("حصل خطأ أثناء تحميل الطلبات");
@@ -116,8 +172,18 @@ export default function OrdersPage() {
   }
 
   useEffect(() => {
-    fetchOrders(1);
+    if (bootStateRef.current.fromDetails) {
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    const boot = bootStateRef.current;
+    fetchOrders(boot.page, boot.filters);
   }, []);
+
+  useEffect(() => {
+    if (!highlightOrderId || loading) return undefined;
+    const timer = window.setTimeout(() => setHighlightOrderId(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [highlightOrderId, loading, orders]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +195,9 @@ export default function OrdersPage() {
           ? result.data
           : Array.isArray(result?.employees)
             ? result.employees
-            : [];
+            : Array.isArray(result)
+              ? result
+              : [];
 
         if (!cancelled) {
           setEmployees(list);
@@ -148,6 +216,50 @@ export default function OrdersPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAllProducts() {
+      const limit = 100;
+      const aggregated = [];
+      try {
+        setProductsLoading(true);
+        let page = 1;
+        while (!cancelled) {
+          const data = await getProducts({ page, limit });
+          const list = normalizeProductList(data);
+          aggregated.push(...list);
+          const totalPages =
+            data?.totalPages ?? data?.pagination?.totalPages ?? null;
+          const done =
+            list.length === 0 ||
+            list.length < limit ||
+            (totalPages != null && page >= totalPages);
+          if (done) break;
+          page += 1;
+          if (page > 200) break;
+        }
+        if (!cancelled) {
+          setProducts(aggregated);
+        }
+      } catch (error) {
+        console.log(error);
+        if (!cancelled) {
+          setProducts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setProductsLoading(false);
+        }
+      }
+    }
+
+    loadAllProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   function handleFilterChange(name, value) {
     setFilters((prev) => ({
       ...prev,
@@ -160,14 +272,26 @@ export default function OrdersPage() {
   }
 
   function clearFilters() {
-    const clearedFilters = { status: "", employee: "", from: "", to: "" };
+    const clearedFilters = getDefaultOrdersFilters();
     setFilters(clearedFilters);
+    clearOrdersListState();
     fetchOrders(1, clearedFilters);
   }
 
-  function handleViewDetails(order) {
-    navigate("/orders/payload-details", {
-      state: { returnTo: location.pathname, order },
+  function handleViewDetails(order, rowIndex) {
+    const focusedOrderId = orderRowKey(order, rowIndex);
+    const ordersListState = { filters, page, focusedOrderId };
+    writeOrdersListState(ordersListState);
+    navigate(appHref("orders/payload-details"), {
+      state: { returnTo: location.pathname, order, ordersListState },
+    });
+  }
+
+  function handleCopyCustomer(order) {
+    const ordersListState = { filters, page };
+    writeOrdersListState(ordersListState);
+    navigate(appHref("orders/create"), {
+      state: { copyFromOrder: order, ordersListState },
     });
   }
 
@@ -187,9 +311,29 @@ export default function OrdersPage() {
     return Array.from(dedup.values()).sort((a, b) => a.name.localeCompare(b.name, "ar"));
   }, [employees]);
 
+  const productOptions = useMemo(() => {
+    const seen = new Set();
+    const rows = [];
+    for (const item of products) {
+      const id = getProductFilterId(item);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const { name, sku } = getProductListLabel(item);
+      const label = sku ? `${name} — ${sku}` : name;
+      rows.push({ id, label });
+    }
+    rows.sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    return rows;
+  }, [products]);
+
   const filteredOrders = useMemo(() => orders, [orders]);
 
-  const hasLocalFilters = Boolean(filters.status || filters.employee);
+  const hasLocalFilters = Boolean(
+    filters.status ||
+      filters.employee ||
+      filters.customer_name?.trim() ||
+      filters.phone?.trim(),
+  );
 
   const summaryStats = useMemo(() => {
     const normalized = filteredOrders.map((order) => normalizeStatus(getOrderStatus(order)));
@@ -220,7 +364,7 @@ export default function OrdersPage() {
         </div>
         <div className="orders-page__header-actions">
           <button
-            onClick={() => navigate("/orders/create")}
+            onClick={() => navigate(appHref("orders/create"))}
             className="orders-page__btn orders-page__btn--primary"
             type="button"
           >
@@ -272,6 +416,31 @@ export default function OrdersPage() {
         </label>
 
         <label className="orders-page__field">
+          اسم العميل
+          <input
+            className="orders-page__input"
+            type="search"
+            autoComplete="off"
+            placeholder="اسم العميل"
+            value={filters.customer_name}
+            onChange={(e) => handleFilterChange("customer_name", e.target.value)}
+          />
+        </label>
+
+        <label className="orders-page__field">
+          تليفون العميل
+          <input
+            className="orders-page__input"
+            type="tel"
+            inputMode="tel"
+            autoComplete="off"
+            placeholder="رقم التليفون"
+            value={filters.phone}
+            onChange={(e) => handleFilterChange("phone", e.target.value)}
+          />
+        </label>
+
+        <label className="orders-page__field">
           من تاريخ
           <input
             className="orders-page__input"
@@ -289,6 +458,70 @@ export default function OrdersPage() {
             value={filters.to}
             onChange={(e) => handleFilterChange("to", e.target.value)}
           />
+        </label>
+
+        <label className="orders-page__field">
+          مصدر الطلب
+          <select
+            className="orders-page__input"
+            value={filters.order_source}
+            onChange={(e) => handleFilterChange("order_source", e.target.value)}
+          >
+            {orderSourceOptions.map((option) => (
+              <option key={option.value || "all-sources"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          نوع الطلب
+          <select
+            className="orders-page__input"
+            value={filters.order_type}
+            onChange={(e) => handleFilterChange("order_type", e.target.value)}
+          >
+            {orderTypeOptions.map((option) => (
+              <option key={option.value || "all-types"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          حالة الشحن
+          <select
+            className="orders-page__input"
+            value={filters.shipping_status}
+            onChange={(e) => handleFilterChange("shipping_status", e.target.value)}
+          >
+            {shippingStatusOptions.map((option) => (
+              <option key={option.value || "all-shipping"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          المنتج
+          <select
+            className="orders-page__input"
+            value={filters.product_id}
+            onChange={(e) => handleFilterChange("product_id", e.target.value)}
+            disabled={productsLoading}
+          >
+            <option value="">
+              {productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"}
+            </option>
+            {productOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
         </label>
         </section>
         <div className="orders-page__filter-actions">
@@ -330,12 +563,21 @@ export default function OrdersPage() {
           <strong>{summaryStats.noReply}</strong>
         </article>
       </section> */}
-
+        <article className="orders-page__stat-card">
+          <span>إجمالي الطلبات</span>
+          <strong>{summaryStats.total}</strong>
+        </article>
       {loading ? (
         <p className="orders-page__loading">جاري تحميل الطلبات...</p>
       ) : (
         <>
-          <OrdersTable orders={filteredOrders} onViewDetails={handleViewDetails} />
+        
+          <OrdersTable
+            orders={filteredOrders}
+            highlightOrderId={highlightOrderId}
+            onViewDetails={handleViewDetails}
+            onCopyCustomer={handleCopyCustomer}
+          />
 
           <div className="orders-page__pagination">
             <button
