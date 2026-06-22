@@ -301,12 +301,39 @@ export async function getOrderCosts(params = {}) {
   return response.data;
 }
 
-/** Order cost trend chart — `GET /api/{system}/charts/order-cost` */
-export async function getOrderCostChart(params = {}) {
+/** Order cost chart — `GET /api/{system}/charts/order-cost?from=&to=&date_basis=` */
+export async function getOrderCostChart({ from, to, date_basis } = {}) {
+  const params = cleanApiParams({ from, to, date_basis });
   const response = await apiClient.get(dashboardApiPath("charts/order-cost"), {
-    params: cleanApiParams(params),
+    params,
   });
   return response.data;
+}
+
+/** Save one day expense + order counts — `POST /api/{system}/charts/order-cost?date_basis=` */
+export async function saveOrderCostDay({ date, expense, date_basis } = {}) {
+  const day = normalizeDateInput(date) || String(date ?? "").trim();
+  const body = { date: day, expense: Number(expense) };
+  const params = cleanApiParams({ date_basis });
+  const url = dashboardApiPath("charts/order-cost");
+
+  console.log("[ordersApi] saveOrderCostDay REQUEST", { method: "POST", url, body });
+
+  try {
+    const response = await apiClient.post(url, body, { params });
+    console.log("[ordersApi] saveOrderCostDay RESPONSE", {
+      status: response.status,
+      data: response.data,
+    });
+    return response.data;
+  } catch (error) {
+    console.log("[ordersApi] saveOrderCostDay RESPONSE ERROR", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    throw error;
+  }
 }
 
 export async function getOrdersAnalytics(params = {}) {

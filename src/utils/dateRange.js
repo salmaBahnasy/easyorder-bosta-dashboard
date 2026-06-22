@@ -56,6 +56,29 @@ export function egyptTodayYmd() {
   );
 }
 
+/** Clamp inclusive calendar range so neither end is after today (Cairo). */
+export function clampDateRangeToToday(dateFrom, dateTo) {
+  const today = egyptTodayYmd();
+  let from = normalizeDateInput(dateFrom);
+  let to = normalizeDateInput(dateTo);
+  if (!from && !to) return { dateFrom: from, dateTo: to };
+  if (!from) from = to;
+  if (!to) to = from;
+  if (to > today) to = today;
+  if (from > today) from = today;
+  if (from > to) from = to;
+  return { dateFrom: from, dateTo: to };
+}
+
+/** Drop chart points dated after today (Cairo). */
+export function filterPointsUpToToday(points) {
+  const today = egyptTodayYmd();
+  return (Array.isArray(points) ? points : []).filter((p) => {
+    const d = normalizeDateInput(p?.date);
+    return d && d <= today;
+  });
+}
+
 function addDaysToYmd(ymd, dayDelta) {
   const anchor = new Date(`${ymd}T12:00:00${EGYPT_OFFSET}`);
   anchor.setTime(anchor.getTime() + dayDelta * 24 * 60 * 60 * 1000);
@@ -94,7 +117,8 @@ export function buildEgyptPresetDateRange(preset) {
  */
 export function computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo } = {}) {
   if (dateFrom && dateTo) {
-    return buildEgyptDateRangeFromTo(dateFrom, dateTo);
+    const capped = clampDateRangeToToday(dateFrom, dateTo);
+    return buildEgyptDateRangeFromTo(capped.dateFrom, capped.dateTo);
   }
   return buildEgyptPresetDateRange(dateRange);
 }
