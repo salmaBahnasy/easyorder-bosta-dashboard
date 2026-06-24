@@ -10,6 +10,8 @@ import {
   orderRowKey,
   orderShippingStatus,
   orderStatus,
+  orderType,
+  orderTypeDisplayLabel,
   orderUpdatedByName,
 } from "../utils/orderDisplay";
 import {
@@ -164,6 +166,7 @@ export default function OrdersTable({
             const rowKey = orderRowKey(order, index);
             const productLines = orderCartProductLines(order);
             const statusView = getStatusPresentation(orderStatus(order));
+            const typeLabel = orderTypeDisplayLabel(orderType(order));
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
             const showShippingWithStatus =
@@ -204,6 +207,14 @@ export default function OrdersTable({
                     >
                       {statusView.label}
                     </span>
+                    {typeLabel ? (
+                      <span
+                        className="orders-table__shipping-beside"
+                        title="نوع الطلب"
+                      >
+                        · {typeLabel}
+                      </span>
+                    ) : null}
                     {showShippingWithStatus ? (
                       <span
                         className="orders-table__shipping-beside"

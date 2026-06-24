@@ -124,6 +124,7 @@ export default function CreateOrderPage() {
     allowToOpenPackage: false,
     firstName: "",
     mobile: "",
+    mobile2: "",
     shipping_cost: "",
     payment_method: "COD",
     order_type: "new",
@@ -147,6 +148,7 @@ export default function CreateOrderPage() {
       ...prev,
       firstName: draft.firstName || prev.firstName,
       mobile: draft.mobile || prev.mobile,
+      mobile2: draft.mobile2 || prev.mobile2,
       firstLine: draft.firstLine || prev.firstLine,
       cityName: draft.cityName || prev.cityName,
       cityId: draft.cityId || prev.cityId,
@@ -262,6 +264,11 @@ export default function CreateOrderPage() {
     setField("mobile", digits);
   }
 
+  function handleMobile2Change(value) {
+    const digits = String(value ?? "").replace(/\D/g, "").slice(0, 11);
+    setField("mobile2", digits);
+  }
+
   async function handleCreateOrder() {
     const validation = validateCreateOrderForm(form, cartItems);
     if (!validation.valid) {
@@ -269,7 +276,7 @@ export default function CreateOrderPage() {
       return;
     }
 
-    const { linesForPayload, phoneDigits } = validation;
+    const { linesForPayload, phoneDigits, phone2Digits } = validation;
 
     const uiStatus = selectedOrderStatus || "جديد";
     const backendStatus = backendStatusMap[uiStatus] ?? "new";
@@ -298,6 +305,7 @@ export default function CreateOrderPage() {
       id: form.orderAlias?.trim() || `manual-order-${Date.now()}`,
       fullName: form.firstName,
       phone: phoneDigits,
+      phone2: phone2Digits,
       address: form.firstLine,
       government: form.cityName,
       orderSource: form.order_source,
@@ -506,6 +514,21 @@ export default function CreateOrderPage() {
                   />
                 </label>
               </div>
+              <div className="order-details-page__fields-row order-details-page__fields-row--duo">
+                <label className="order-details-page__field">
+                  رقم موبايل تاني (اختياري)
+                  <input
+                    className="order-details-page__input"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={11}
+                    placeholder="01xxxxxxxxx"
+                    value={form.mobile2}
+                    onChange={(e) => handleMobile2Change(e.target.value)}
+                  />
+                </label>
+              </div>
               <BostaCityDistrictFields
                 cityId={form.cityId}
                 districtId={form.districtId}
@@ -627,6 +650,12 @@ export default function CreateOrderPage() {
               <span>الهاتف</span>
               <strong>{form.mobile || "—"}</strong>
             </div>
+            {form.mobile2 ? (
+              <div className="order-details-page__summary-row">
+                <span>هاتف إضافي</span>
+                <strong>{form.mobile2}</strong>
+              </div>
+            ) : null}
             <div className="order-details-page__summary-row">
               <span>حالة الطلب</span>
               <strong>{orderStatusUiLabel(selectedOrderStatus || "جديد")}</strong>

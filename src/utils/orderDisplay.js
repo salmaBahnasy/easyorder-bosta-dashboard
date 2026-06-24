@@ -66,6 +66,28 @@ export function orderPhone(order) {
   return order["Phone"] ?? order.phone ?? "—";
 }
 
+/** رقم موبايل إضافي اختياري. */
+export function orderSecondPhone(order) {
+  const c = order.customer;
+  if (c && typeof c === "object") {
+    const fromCustomer =
+      c.phone2 ?? c.second_phone ?? c.mobile2 ?? c.secondMobile;
+    if (fromCustomer != null && String(fromCustomer).trim() !== "") {
+      return String(fromCustomer).trim();
+    }
+  }
+  const v =
+    order.phone2 ??
+    order.phone_2 ??
+    order.second_phone ??
+    order.secondPhone ??
+    order.mobile2 ??
+    order.second_mobile ??
+    order.secondMobile;
+  if (v != null && String(v).trim() !== "") return String(v).trim();
+  return null;
+}
+
 export function orderCity(order) {
   const c = order.customer;
   if (c && typeof c === "object" && c.governorate) {
@@ -235,6 +257,25 @@ export function orderStatus(order) {
     order["Order Status"] ??
     "—"
   );
+}
+
+const ORDER_TYPE_LABELS = {
+  new: "أوردر جديد",
+  replacement: "استبدال",
+  return: "مرتجع",
+};
+
+/** نوع الطلب (new / replacement / return). */
+export function orderType(order) {
+  const v = order?.order_type ?? order?.orderType;
+  if (v != null && String(v).trim() !== "") return String(v).trim();
+  return null;
+}
+
+export function orderTypeDisplayLabel(value) {
+  if (value == null || value === "") return null;
+  const key = String(value).trim().toLowerCase();
+  return ORDER_TYPE_LABELS[key] ?? String(value);
 }
 
 /** حالة الشحن من الطلب (للعرض مع «تم الشحن»). */

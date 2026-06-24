@@ -10,7 +10,7 @@ export function filterCartLinesForPayload(cartItems) {
 }
 
 /**
- * @returns {{ valid: boolean, errors: string[], linesForPayload: object[], phoneDigits: string }}
+ * @returns {{ valid: boolean, errors: string[], linesForPayload: object[], phoneDigits: string, phone2Digits: string }}
  */
 export function validateCreateOrderForm(form, cartItems) {
   const errors = [];
@@ -25,6 +25,11 @@ export function validateCreateOrderForm(form, cartItems) {
     errors.push("رقم الموبايل مطلوب");
   } else if (phoneDigits.length !== 11) {
     errors.push("رقم الموبايل يجب أن يكون 11 رقمًا");
+  }
+
+  const phone2Digits = normalizePhoneDigits(form?.mobile2);
+  if (phone2Digits && phone2Digits.length !== 11) {
+    errors.push("رقم الموبايل الثاني يجب أن يكون 11 رقمًا");
   }
 
   if (!String(form?.firstLine ?? "").trim()) {
@@ -44,5 +49,6 @@ export function validateCreateOrderForm(form, cartItems) {
     errors,
     linesForPayload,
     phoneDigits,
+    phone2Digits,
   };
 }

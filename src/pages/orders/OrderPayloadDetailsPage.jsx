@@ -24,6 +24,7 @@ import {
   orderDisplayId,
   orderPayment,
   orderPhone,
+  orderSecondPhone,
 } from "../../utils/orderDisplay";
 import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
 import "./OrderPayloadDetailsPage.css";
@@ -184,6 +185,7 @@ export default function OrderPayloadDetailsPage() {
     allowToOpenPackage: true,
     firstName: "",
     mobile: "",
+    mobile2: "",
     type: "FORWARD",
     shipping_cost: "",
     payment_method: "COD",
@@ -224,6 +226,7 @@ export default function OrderPayloadDetailsPage() {
       note: String(order.note ?? order.notes ?? "").trim(),
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
+      mobile2: orderSecondPhone(order) ?? "",
       shipping_cost: String(
         order.shipping_cost ??
           order.shippingCost ??
@@ -554,6 +557,7 @@ export default function OrderPayloadDetailsPage() {
     const payload = {
       full_name: form.firstName,
       phone: form.mobile,
+      phone2: String(form.mobile2 ?? "").trim(),
       cityName: form.cityName,
       address: form.firstLine,
       status: backendStatus,
@@ -899,6 +903,20 @@ export default function OrderPayloadDetailsPage() {
                   />
                 </label>
               </div>
+              <div className="order-details-page__fields-row order-details-page__fields-row--duo">
+                <label className="order-details-page__field">
+                  رقم موبايل تاني (اختياري)
+                  <input
+                    className="order-details-page__input"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    placeholder="01xxxxxxxxx"
+                    value={form.mobile2}
+                    onChange={(e) => setField("mobile2", e.target.value)}
+                  />
+                </label>
+              </div>
               <BostaCityDistrictFields
                 cityId={form.cityId}
                 districtId={form.districtId}
@@ -982,6 +1000,12 @@ export default function OrderPayloadDetailsPage() {
               <span>الهاتف</span>
               <strong>{form.mobile || "—"}</strong>
             </div>
+            {form.mobile2 ? (
+              <div className="order-details-page__summary-row">
+                <span>هاتف إضافي</span>
+                <strong>{form.mobile2}</strong>
+              </div>
+            ) : null}
             <div className="order-details-page__summary-row">
               <span>حالة الطلب</span>
               <strong>{orderStatusUiLabel(currentOrderStatus)}</strong>

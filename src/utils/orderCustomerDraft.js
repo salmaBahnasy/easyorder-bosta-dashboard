@@ -1,6 +1,6 @@
 import { getOrderGovernmentName } from "./bostaLocation";
 import { normalizePhoneDigits } from "./createOrderValidation";
-import { orderAddress, orderCustomer, orderPhone } from "./orderDisplay";
+import { orderAddress, orderCustomer, orderPhone, orderSecondPhone } from "./orderDisplay";
 
 function pickText(...values) {
   for (const value of values) {
@@ -28,6 +28,7 @@ export function buildCreateOrderDraftFromOrder(order) {
   const mobile = normalizePhoneDigits(
     pickText(orderPhone(order), order.phone, order.mobile),
   );
+  const mobile2 = normalizePhoneDigits(pickText(orderSecondPhone(order)));
   const firstLine = pickText(
     orderAddress(order),
     order.address,
@@ -56,6 +57,7 @@ export function buildCreateOrderDraftFromOrder(order) {
   return {
     firstName,
     mobile,
+    mobile2,
     firstLine,
     cityName,
     cityId,
