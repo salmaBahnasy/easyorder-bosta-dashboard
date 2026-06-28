@@ -1,3 +1,5 @@
+import { validateCartRowsVariants } from "./cartProductVariants";
+
 export function normalizePhoneDigits(value) {
   return String(value ?? "").replace(/\D/g, "");
 }
@@ -19,6 +21,8 @@ export function validateCreateOrderForm(form, cartItems) {
   if (linesForPayload.length === 0) {
     errors.push("يجب إضافة منتج واحد على الأقل");
   }
+
+  errors.push(...validateCartRowsVariants(cartItems));
 
   const phoneDigits = normalizePhoneDigits(form?.mobile);
   if (!phoneDigits) {

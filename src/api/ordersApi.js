@@ -49,6 +49,22 @@ function dashboardApiPath(resourcePath) {
   return `${prefix}/${r}`;
 }
 
+function authorizedRequestConfig() {
+  const token = getStoredToken();
+  if (!token) {
+    throw new Error("لا يوجد token — سجّلي الدخول أولاً");
+  }
+  if (!isTokenValid(token)) {
+    handleSessionExpired();
+    throw new Error("انتهت صلاحية الجلسة");
+  }
+  return {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  };
+}
+
 apiClient.interceptors.response.use(
   (response) => {
     console.log("[ordersApi] RESPONSE", {
@@ -244,6 +260,76 @@ export async function getBostaDistricts(cityId, searchParams = {}) {
   return response.data;
 }
 
+/** Bosta SKU mappings — `GET/POST /api/{system}/bosta/sku-mappings` */
+export async function getSkuMappings() {
+  const response = await apiClient.get(
+    dashboardApiPath("bosta/sku-mappings"),
+  );
+  return response.data;
+}
+
+export async function getSkuMappingByType(mappingType, entityId) {
+  const type = String(mappingType ?? "").trim();
+  const id = String(entityId ?? "").trim();
+  const response = await apiClient.get(
+    dashboardApiPath(`bosta/sku-mappings/${type}/${encodeURIComponent(id)}`),
+  );
+  return response.data;
+}
+
+export async function createSkuMapping(payload) {
+  const response = await apiClient.post(
+    dashboardApiPath("bosta/sku-mappings"),
+    payload,
+  );
+  return response.data;
+}
+
+export async function importSkuMappings(payload) {
+  const response = await apiClient.post(
+    dashboardApiPath("bosta/sku-mappings/import"),
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateSkuMapping(mappingType, entityId, payload) {
+  const type = String(mappingType ?? "").trim();
+  const id = String(entityId ?? "").trim();
+  const response = await apiClient.put(
+    dashboardApiPath(`bosta/sku-mappings/${type}/${encodeURIComponent(id)}`),
+    payload,
+  );
+  return response.data;
+}
+
+export async function patchSkuMapping(mappingType, entityId, payload) {
+  const type = String(mappingType ?? "").trim();
+  const id = String(entityId ?? "").trim();
+  const response = await apiClient.patch(
+    dashboardApiPath(`bosta/sku-mappings/${type}/${encodeURIComponent(id)}`),
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteSkuMapping(mappingType, entityId) {
+  const type = String(mappingType ?? "").trim();
+  const id = String(entityId ?? "").trim();
+  const response = await apiClient.delete(
+    dashboardApiPath(`bosta/sku-mappings/${type}/${encodeURIComponent(id)}`),
+  );
+  return response.data;
+}
+
+export async function deleteUnmappedSku(unmappedId) {
+  const id = String(unmappedId ?? "").trim();
+  const response = await apiClient.delete(
+    dashboardApiPath(`bosta/sku-mappings/unmapped/${encodeURIComponent(id)}`),
+  );
+  return response.data;
+}
+
 export async function updateOrderStatus(orderId, status) {
   const body = { status, ...getOrderAuditFields() };
   const response = await apiClient.patch(
@@ -258,6 +344,54 @@ export async function updateOrder(orderId, payload) {
   const response = await apiClient.patch(
     dashboardApiPath(`orders/${orderId}`),
     body,
+  );
+  return response.data;
+}
+
+/** إرسال الطلب إلى بوسطة — `POST /api/{system}/orders/:orderId/send-to-bosta` */
+export async function sendOrderToBosta(
+  orderId,
+  { cityId, districtId, note, allowToOpenPackage } = {},
+) {
+  const body = {
+    cityId: String(cityId ?? "").trim(),
+    districtId: String(districtId ?? "").trim(),
+    note: String(note ?? "").trim(),
+    allowToOpenPackage: Boolean(allowToOpenPackage),
+  };
+  const response = await apiClient.post(
+    dashboardApiPath(`orders/${orderId}/send-to-bosta`),
+    body,
+    authorizedRequestConfig(),
+  );
+  return response.data;
+}
+
+/** إرسال عدة طلبات إلى بوسطة — `POST /api/{system}/orders/send-to-bosta/bulk` */
+export async function sendOrdersToBostaBulk({
+  orderIds,
+  cityId,
+  districtId,
+  perOrderOverrides,
+} = {}) {
+  const body = {
+    orderIds: (orderIds ?? [])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean),
+    cityId: String(cityId ?? "").trim(),
+    districtId: String(districtId ?? "").trim(),
+  };
+  if (
+    perOrderOverrides &&
+    typeof perOrderOverrides === "object" &&
+    Object.keys(perOrderOverrides).length > 0
+  ) {
+    body.perOrderOverrides = perOrderOverrides;
+  }
+  const response = await apiClient.post(
+    dashboardApiPath("orders/send-to-bosta/bulk"),
+    body,
+    authorizedRequestConfig(),
   );
   return response.data;
 }

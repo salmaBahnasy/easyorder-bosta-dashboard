@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { updateOrder, updateOrderStatus } from "../../api/ordersApi";
+import { updateOrder, updateOrderStatus, sendOrderToBosta } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import CartProductSelect from "../../components/CartProductSelect";
+import CartProductVariantSelect from "../../components/CartProductVariantSelect";
 import FeedbackModal from "../../components/FeedbackModal";
 import { useProductCatalog } from "../../hooks/useProductCatalog";
 import { appHref } from "../../utils/auth";
@@ -25,8 +26,18 @@ import {
   orderPayment,
   orderPhone,
   orderSecondPhone,
+  formatOrderItemVariationProp,
 } from "../../utils/orderDisplay";
+import { formatApiErrorMessage } from "../../utils/apiErrors";
 import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
+import {
+  applyVariantSelection,
+  appendVariantFieldsToCartLine,
+  clearCartRowVariantFields,
+  enrichCartRowWithVariants,
+  loadVariantsForCatalogProduct,
+  validateCartRowsVariants,
+} from "../../utils/cartProductVariants";
 import "./OrderPayloadDetailsPage.css";
 
 function cartRowFromOrderItem(item, idx) {
@@ -40,7 +51,7 @@ function cartRowFromOrderItem(item, idx) {
       item.product?.name ??
       ""
   );
-  const variant = String(item.variant ?? item.variant_name ?? item.variant_label ?? "");
+  const variationProp = formatOrderItemVariationProp(item) ?? "";
   const quantity = Number(item.quantity ?? item.qty ?? 1) || 1;
   const price = Number(item.price ?? item.unitPrice ?? 0) || 0;
   const rawPid =
@@ -51,16 +62,41 @@ function cartRowFromOrderItem(item, idx) {
     rawStr !== "" && Number.isFinite(num) && num > 0 && String(num) === rawStr;
   const catalogProductId = isPureNumericId ? num : null;
   const catalogProductKey = rawStr && !isPureNumericId ? rawStr : "";
+  const variant = item.variant ?? item.product?.variant;
+  const variantIsObject = variant && typeof variant === "object" && !Array.isArray(variant);
+  const productVariantId = String(
+    item.product_variant_id ??
+      item.productVariantId ??
+      (variantIsObject ? variant.id : "") ??
+      (typeof item.variant === "string" && item.variant.includes("-")
+        ? item.variant
+        : ""),
+  ).trim();
+  const variationProps = variantIsObject
+    ? Array.isArray(variant.variation_props)
+      ? variant.variation_props
+      : null
+    : Array.isArray(item.variation_props)
+      ? item.variation_props
+      : null;
   return {
     key: `line-${idx}-${sku || "sku"}-${price}-${quantity}`,
     sku,
     name,
-    variant,
+    variant: variantIsObject ? "" : String(variant ?? item.variant_name ?? item.variant_label ?? ""),
+    variationProp,
     quantity,
     price,
     catalogProductId,
     catalogProductKey,
     catalogOptionId: "",
+    variantOptions: [],
+    selectedVariantId: productVariantId,
+    productVariantId,
+    variationProps,
+    selectedVariantData: variantIsObject ? variant : null,
+    variationLabel: "",
+    variantsLoading: false,
   };
 }
 
@@ -202,6 +238,7 @@ export default function OrderPayloadDetailsPage() {
   });
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [sendingToBosta, setSendingToBosta] = useState(false);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
 
   useEffect(() => {
@@ -214,6 +251,19 @@ export default function OrderPayloadDetailsPage() {
         : [];
 
     setCartItems(sourceItems.map((item, idx) => cartRowFromOrderItem(item, idx)));
+
+    let cancelled = false;
+    (async () => {
+      const rows = sourceItems.map((item, idx) => cartRowFromOrderItem(item, idx));
+      const enriched = await Promise.all(
+        rows.map((row) =>
+          enrichCartRowWithVariants(row, {
+            preselectedVariantId: row.productVariantId || row.selectedVariantId,
+          }),
+        ),
+      );
+      if (!cancelled) setCartItems(enriched);
+    })();
 
     setForm((prev) => ({
       ...prev,
@@ -246,6 +296,10 @@ export default function OrderPayloadDetailsPage() {
         order.shipping_status ?? order.shippingStatus,
       ),
     }));
+
+    return () => {
+      cancelled = true;
+    };
   }, [order]);
 
   const itemsSubtotal = useMemo(
@@ -295,7 +349,7 @@ export default function OrderPayloadDetailsPage() {
     });
   }
 
-  function handleRowCatalogSelect(rowKey, optionId) {
+  async function handleRowCatalogSelect(rowKey, optionId) {
     if (!optionId) {
       updateCartRow(rowKey, {
         sku: "",
@@ -304,6 +358,7 @@ export default function OrderPayloadDetailsPage() {
         catalogProductId: null,
         catalogProductKey: "",
         catalogOptionId: "",
+        ...clearCartRowVariantFields(),
       });
       return;
     }
@@ -312,7 +367,47 @@ export default function OrderPayloadDetailsPage() {
     );
     if (idx === -1) return;
     const fields = productToCartFields(catalogProducts[idx]);
-    updateCartRow(rowKey, { ...fields, price: "", catalogOptionId: optionId });
+    updateCartRow(rowKey, {
+      ...fields,
+      price: "",
+      catalogOptionId: optionId,
+      ...clearCartRowVariantFields(),
+      variantsLoading: true,
+    });
+
+    try {
+      const { variantOptions, variationLabel } = await loadVariantsForCatalogProduct(
+        catalogProducts[idx],
+      );
+      const patch = {
+        variantOptions,
+        variationLabel,
+        variantsLoading: false,
+      };
+      if (variantOptions.length === 1) {
+        Object.assign(patch, applyVariantSelection(variantOptions, variantOptions[0].id));
+      }
+      updateCartRow(rowKey, patch);
+    } catch (error) {
+      console.log(error);
+      updateCartRow(rowKey, { variantsLoading: false });
+    }
+  }
+
+  function handleRowVariantSelect(rowKey, variantId) {
+    const row = cartItems.find((r) => r.key === rowKey);
+    if (!row) return;
+    if (!variantId) {
+      updateCartRow(rowKey, {
+        selectedVariantId: "",
+        productVariantId: "",
+        variationProp: "",
+        variationProps: null,
+        selectedVariantData: null,
+      });
+      return;
+    }
+    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId));
   }
 
   function handleBack() {
@@ -488,7 +583,7 @@ export default function OrderPayloadDetailsPage() {
   async function handleShipAndOpenModal() {
     const isUpdated = await applyStatus("تم الشحن");
     if (isUpdated) {
-      setIsConfirmModalOpen(true);
+      handleOpenSendToBostaModal();
     }
   }
 
@@ -500,9 +595,76 @@ export default function OrderPayloadDetailsPage() {
     setIsConfirmModalOpen(false);
   }
 
+  function handleOpenSendToBostaModal() {
+    if (!orderIdForStatusUpdate) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة",
+      });
+      return;
+    }
+    if (!String(form.cityId ?? "").trim()) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "اختاري المحافظة قبل الإرسال إلى بوسطة",
+      });
+      return;
+    }
+    if (!String(form.districtId ?? "").trim()) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "اختاري المنطقة قبل الإرسال إلى بوسطة",
+      });
+      return;
+    }
+    setIsConfirmModalOpen(true);
+  }
+
   async function handleSendToBosta() {
-    setIsConfirmModalOpen(false);
-    alert("تم إرسال الطلب إلى بوسطة");
+    if (!orderIdForStatusUpdate) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة",
+      });
+      return;
+    }
+    if (!String(form.cityId ?? "").trim() || !String(form.districtId ?? "").trim()) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "المحافظة والمنطقة مطلوبتان للإرسال إلى بوسطة",
+      });
+      return;
+    }
+
+    try {
+      setSendingToBosta(true);
+      await sendOrderToBosta(orderIdForStatusUpdate, {
+        cityId: form.cityId,
+        districtId: form.districtId,
+        note: form.note,
+        allowToOpenPackage: form.allowToOpenPackage,
+      });
+      setIsConfirmModalOpen(false);
+      setFeedbackModal({
+        open: true,
+        variant: "success",
+        message: "تم إرسال الطلب إلى بوسطة بنجاح",
+      });
+    } catch (error) {
+      console.error("[send-to-bosta]", error?.response?.data ?? error);
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: formatApiErrorMessage(error, "تعذر إرسال الطلب إلى بوسطة"),
+      });
+    } finally {
+      setSendingToBosta(false);
+    }
   }
 
   async function handleSaveOrderChanges() {
@@ -520,6 +682,16 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
+    const variantErrors = validateCartRowsVariants(linesForPayload);
+    if (variantErrors.length > 0) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: variantErrors.join("\n"),
+      });
+      return;
+    }
+
     const initialStatus =
       order?.orderStatus ??
       order?.order_status ??
@@ -530,18 +702,11 @@ export default function OrderPayloadDetailsPage() {
     const backendStatus = backendStatusMap[uiStatusForSave] ?? "new";
     const showShipFields = uiStatusForSave === "تم الشحن";
     const cartPayload = linesForPayload.map((row) => {
-      const line = {
-        sku: row.sku,
-        skuCode: row.sku,
-        product_name: row.name,
-        quantity: Number(row.quantity) || 1,
-        price: Number(row.price) || 0,
-      };
-      if (row.catalogProductId != null) {
-        line.product_id = row.catalogProductId;
-      } else if (row.catalogProductKey) {
-        line.product_id = row.catalogProductKey;
-      } else if (row.catalogOptionId) {
+      let productId =
+        row.catalogProductId != null
+          ? String(row.catalogProductId)
+          : row.catalogProductKey || null;
+      if (!productId && row.catalogOptionId) {
         const pi = catalogProducts.findIndex(
           (p, i) => productOptionId(p, i) === row.catalogOptionId,
         );
@@ -549,10 +714,22 @@ export default function OrderPayloadDetailsPage() {
           const p = unwrapCatalogProduct(catalogProducts[pi]);
           const rid =
             p?.id ?? p?._id ?? p?.easyorder_id ?? parseProductRawData(p).id;
-          if (rid != null && rid !== "") line.product_id = rid;
+          if (rid != null && rid !== "") productId = String(rid);
         }
       }
-      return line;
+
+      const line = {
+        quantity: Number(row.quantity) || 1,
+        price: Number(row.price) || 0,
+        in_cart: false,
+        product: {
+          name: row.name,
+          sku: row.sku,
+          ...(productId ? { id: productId } : {}),
+        },
+        ...(productId ? { product_id: productId } : {}),
+      };
+      return appendVariantFieldsToCartLine(line, row, productId);
     });
     const payload = {
       full_name: form.firstName,
@@ -734,8 +911,16 @@ export default function OrderPayloadDetailsPage() {
           </div>
           <button
             type="button"
+            onClick={handleOpenSendToBostaModal}
+            disabled={sendingToBosta || savingOrder}
+            className="order-details-page__btn order-details-page__btn--soft"
+          >
+            {sendingToBosta ? "جاري الإرسال..." : "إرسال إلى بوسطة"}
+          </button>
+          <button
+            type="button"
             onClick={handleSaveOrderChanges}
-            disabled={savingOrder}
+            disabled={savingOrder || sendingToBosta}
             className="order-details-page__btn order-details-page__btn--primary"
           >
             {savingOrder ? "جاري الحفظ..." : "حفظ تعديلات الطلب"}
@@ -775,15 +960,23 @@ export default function OrderPayloadDetailsPage() {
                     {cartItems.map((row) => (
                       <tr key={row.key}>
                         <td>
-                          <CartProductSelect
-                            row={row}
-                            catalogProducts={catalogProducts}
-                            catalogLoading={catalogLoading}
-                            onSearchChange={onCatalogSearchChange}
-                            onSelect={(optionId) =>
-                              handleRowCatalogSelect(row.key, optionId)
-                            }
-                          />
+                          <div className="order-details-page__cart-product-cell">
+                            <CartProductSelect
+                              row={row}
+                              catalogProducts={catalogProducts}
+                              catalogLoading={catalogLoading}
+                              onSearchChange={onCatalogSearchChange}
+                              onSelect={(optionId) =>
+                                handleRowCatalogSelect(row.key, optionId)
+                              }
+                            />
+                            <CartProductVariantSelect
+                              row={row}
+                              onSelect={(variantId) =>
+                                handleRowVariantSelect(row.key, variantId)
+                              }
+                            />
+                          </div>
                         </td>
                         <td>
                           <input
@@ -1074,7 +1267,7 @@ export default function OrderPayloadDetailsPage() {
               <button
                 type="button"
                 onClick={handleSendToBosta}
-                disabled={statusUpdating}
+                disabled={sendingToBosta}
                 style={{
                   background: "#16a085",
                   color: "#fff",
@@ -1083,14 +1276,15 @@ export default function OrderPayloadDetailsPage() {
                   borderRadius: 8,
                   cursor: "pointer",
                   fontWeight: 600,
-                  opacity: statusUpdating ? 0.7 : 1,
+                  opacity: sendingToBosta ? 0.7 : 1,
                 }}
               >
-                {statusUpdating ? "جاري الإرسال..." : "إرسال إلى بوسطة"}
+                {sendingToBosta ? "جاري الإرسال..." : "تأكيد الإرسال"}
               </button>
               <button
                 type="button"
                 onClick={handleCloseConfirmModal}
+                disabled={sendingToBosta}
                 style={{
                   background: "#ecf0f1",
                   color: "#2c3e50",

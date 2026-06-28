@@ -28,6 +28,95 @@ function toDisplayText(value, fallback = "—") {
   return fallback;
 }
 
+function extractVariationPropOnly(value) {
+  if (value == null || value === "") return null;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    const text = String(value).trim();
+    return text || null;
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const prop = value.variation_prop;
+    if (prop == null || prop === "") return null;
+    return String(prop).trim() || null;
+  }
+  return null;
+}
+
+function parseMaybeJsonObject(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!text.startsWith("{") && !text.startsWith("[")) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectItemVariantSources(item) {
+  if (!item || typeof item !== "object") return [];
+  const sources = [];
+  const seen = new Set();
+
+  function add(source) {
+    if (!source || typeof source !== "object" || seen.has(source)) return;
+    seen.add(source);
+    sources.push(source);
+  }
+
+  add(item);
+  add(item.product);
+  add(parseMaybeJsonObject(item.raw_data));
+  add(parseMaybeJsonObject(item.product?.raw_data));
+
+  const variant = item.variant ?? item.product?.variant;
+  if (typeof variant === "object" && variant !== null) {
+    add(variant);
+    add(parseMaybeJsonObject(variant.raw_data));
+  }
+
+  return sources;
+}
+
+function formatVariationPropsField(variationProps) {
+  if (variationProps == null || variationProps === "") return null;
+  if (typeof variationProps === "string" || typeof variationProps === "number") {
+    return extractVariationPropOnly(variationProps);
+  }
+  if (Array.isArray(variationProps)) {
+    const parts = variationProps
+      .map((entry) => extractVariationPropOnly(entry))
+      .filter(Boolean);
+    return parts.length ? parts.join(" · ") : null;
+  }
+  if (typeof variationProps === "object") {
+    return extractVariationPropOnly(variationProps);
+  }
+  return null;
+}
+
+/** نص variation_prop للعرض (القيمة فقط، بدون variation). */
+export function formatOrderItemVariationProp(item) {
+  const parts = [];
+  for (const src of collectItemVariantSources(item)) {
+    const direct = extractVariationPropOnly(src.variation_prop);
+    if (direct) parts.push(direct);
+
+    const fromProps = formatVariationPropsField(src.variation_props);
+    if (fromProps) parts.push(fromProps);
+  }
+
+  const unique = [...new Set(parts.filter(Boolean))];
+  return unique.length ? unique.join(" · ") : null;
+}
+
 /** معرّف للعرض في الجدول */
 export function orderDisplayId(order) {
   const v =
@@ -172,6 +261,7 @@ export function orderCartProductLines(order) {
       return {
         name: toDisplayText(name),
         quantity: Number.isFinite(qty) && qty > 0 ? qty : null,
+        variationProp: formatOrderItemVariationProp(item),
       };
     });
   }

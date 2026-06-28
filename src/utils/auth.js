@@ -228,23 +228,52 @@ function isAuthLoginRequest(config) {
   return url.includes("/auth/login");
 }
 
+/** Bosta / third-party errors proxied through our backend — not dashboard session. */
+function isProxiedExternalApiError(error) {
+  const url = String(error?.config?.url ?? "").toLowerCase();
+  if (url.includes("send-to-bosta") || url.includes("/bosta/")) return true;
+
+  const data = error?.response?.data;
+  if (data?.details?.errorCode && data?.details?.meta?.correlationId) return true;
+
+  const errors = data?.errors;
+  if (
+    Array.isArray(errors) &&
+    errors.some((entry) => String(entry ?? "").toLowerCase().includes("bosta"))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function apiErrorMessageText(error) {
+  return String(
+    error?.response?.data?.message ?? error?.response?.data?.error ?? "",
+  ).toLowerCase();
+}
+
+function isExplicitSessionExpiredMessage(msg) {
+  return (
+    msg.includes("jwt expired") ||
+    msg.includes("session expired") ||
+    msg.includes("انتهت صلاحية الجلسة") ||
+    msg.includes("انتهت الجلسة") ||
+    msg.includes("انتهت صلاحية")
+  );
+}
+
+/** True only when the client should clear auth and redirect to login. */
 export function isUnauthorizedApiError(error) {
   if (isAuthLoginRequest(error?.config)) return false;
+  if (isProxiedExternalApiError(error)) return false;
 
   const status = error?.response?.status;
-  if (status === 401) return true;
-  if (status === 403) {
-    const msg = String(
-      error?.response?.data?.message ?? error?.response?.data?.error ?? "",
-    ).toLowerCase();
-    return (
-      msg.includes("token") ||
-      msg.includes("jwt") ||
-      msg.includes("expired") ||
-      msg.includes("unauthorized") ||
-      msg.includes("غير مصرح") ||
-      msg.includes("انتهت")
-    );
-  }
-  return false;
+  if (status !== 401 && status !== 403) return false;
+
+  const token = getStoredToken();
+  if (!token || !isTokenValid(token)) return true;
+
+  // Token still valid locally — treat as API/business error unless message says session expired.
+  return isExplicitSessionExpiredMessage(apiErrorMessageText(error));
 }

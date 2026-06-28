@@ -12,6 +12,7 @@ import OrdersStatsPage from "./pages/OrdersStatsPage";
 import CreateProductPage from "./pages/products/CreateProductPage";
 import EditProductPage from "./pages/products/EditProductPage";
 import ProductsPage from "./pages/products/ProductsPage";
+import SkuMappingsPage from "./pages/bosta/SkuMappingsPage";
 import {
   appHref,
   getAppBasePath,
@@ -85,6 +86,7 @@ function mainLayoutTree() {
       <Route path="products" element={<ProductsPage />} />
       <Route path="products/create" element={<CreateProductPage />} />
       <Route path="products/:productId/edit" element={<EditProductPage />} />
+      <Route path="bosta/sku-mappings" element={<SkuMappingsPage />} />
       <Route path="orders/payload-details" element={<OrderPayloadDetailsPage />} />
       <Route path="orders/:orderId" element={<OrderDetailsPage />} />
       <Route path="*" element={<Navigate to="dashboard" replace />} />

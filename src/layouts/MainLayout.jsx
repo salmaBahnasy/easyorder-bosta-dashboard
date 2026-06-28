@@ -65,6 +65,15 @@ export default function MainLayout() {
             <span className="main-layout__icon">🧴</span>
             منتجات
           </NavLink>
+          <NavLink
+            to={appHref("bosta/sku-mappings")}
+            className={({ isActive }) =>
+              `main-layout__nav-link ${isActive ? "main-layout__nav-link--active" : ""}`
+            }
+          >
+            <span className="main-layout__icon">🔗</span>
+            ربط SKU بوسطة
+          </NavLink>
           {isStoredUserAdmin() ? (
             <NavLink
               to={appHref("employees")}

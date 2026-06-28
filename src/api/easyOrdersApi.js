@@ -20,7 +20,7 @@ easyOrdersClient.interceptors.request.use(
     });
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 easyOrdersClient.interceptors.response.use(
@@ -32,21 +32,25 @@ easyOrdersClient.interceptors.response.use(
       data: error.response?.data,
     });
     return Promise.reject(error);
-  }
+  },
 );
 
 /**
  * External apps products (requires Api-Key header).
  * Env: VITE_EASY_ORDERS_API_KEY in `.env`
  */
-export async function getExternalProducts({ page = 1, limit = 20, search } = {}) {
+export async function getExternalProducts({
+  page = 1,
+  limit = 20,
+  search,
+} = {}) {
   const params = { page, limit };
   const q = typeof search === "string" ? search.trim() : "";
   if (q) params.search = q;
 
   const response = await easyOrdersClient.get(
     "/api/v1/external-apps/products",
-    { params }
+    { params },
   );
   return response.data;
 }

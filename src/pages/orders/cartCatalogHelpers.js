@@ -91,6 +91,14 @@ export function createEmptyCartRow() {
     catalogProductId: null,
     catalogProductKey: "",
     catalogOptionId: "",
+    variantOptions: [],
+    selectedVariantId: "",
+    productVariantId: "",
+    variationProp: "",
+    variationProps: null,
+    selectedVariantData: null,
+    variationLabel: "",
+    variantsLoading: false,
   };
 }
 

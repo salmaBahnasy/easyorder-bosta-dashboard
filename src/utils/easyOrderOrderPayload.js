@@ -16,10 +16,18 @@ export function mapEasyOrderStatusFields(backendStatus) {
   return { orderStatus, order_status: orderStatus, status };
 }
 
+import { buildCartItemVariantObject } from "./cartProductVariants";
+
 export function buildEasyOrderCartItems(linesForPayload) {
   return (linesForPayload ?? []).map((row) => {
     const quantity = Number(row.quantity) || 1;
     const price = Number(row.price) || 0;
+    const productId =
+      row.catalogProductId != null
+        ? String(row.catalogProductId)
+        : row.catalogProductKey ||
+          (row.resolvedProductId != null ? String(row.resolvedProductId) : "");
+
     const item = {
       quantity,
       price,
@@ -30,12 +38,14 @@ export function buildEasyOrderCartItems(linesForPayload) {
       },
     };
 
-    if (row.catalogProductId != null) {
-      item.product_id = row.catalogProductId;
-    } else if (row.catalogProductKey) {
-      item.product_id = row.catalogProductKey;
-    } else if (row.catalogOptionId && row.resolvedProductId != null) {
-      item.product_id = row.resolvedProductId;
+    if (productId) {
+      item.product_id = productId;
+      item.product.id = productId;
+    }
+
+    const variant = buildCartItemVariantObject(row, productId || null);
+    if (variant) {
+      item.variant = variant;
     }
 
     return item;

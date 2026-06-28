@@ -1,0 +1,335 @@
+.sku-mappings-page {
+  padding: 24px;
+  direction: rtl;
+  font-family: "Cairo", Arial, sans-serif;
+  background: #f9fafb;
+  color: #2b2b2b;
+}
+
+.sku-mappings-page__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.sku-mappings-page__header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.sku-mappings-page__header p {
+  margin: 6px 0 0;
+  color: #6d7690;
+  font-size: 14px;
+}
+
+.sku-mappings-page__header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sku-mappings-page__btn {
+  border-radius: 10px;
+  border: 1px solid transparent;
+  padding: 9px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sku-mappings-page__btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.sku-mappings-page__btn--primary {
+  background: #16a085;
+  border-color: #16a085;
+  color: #fff;
+}
+
+.sku-mappings-page__btn--outline {
+  background: #fff;
+  border-color: #d8deec;
+  color: #3c4763;
+}
+
+.sku-mappings-page__filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.sku-mappings-page__filter {
+  border: 1px solid #d8deec;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sku-mappings-page__filter--active {
+  background: #eef3ff;
+  border-color: #5b6fb6;
+  color: #3d5290;
+}
+
+.sku-mappings-page__card {
+  background: #fff;
+  border: 1px solid #e4e9f5;
+  border-radius: 14px;
+  box-shadow: 0 10px 20px rgba(18, 34, 84, 0.06);
+  margin-bottom: 16px;
+}
+
+.sku-mappings-page__form-card {
+  padding: 16px;
+}
+
+.sku-mappings-page__form-card h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.sku-mappings-page__form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sku-mappings-page__field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #5a657f;
+}
+
+.sku-mappings-page__field--full {
+  grid-column: 1 / -1;
+}
+
+.sku-mappings-page__input,
+.sku-mappings-page__select,
+.sku-mappings-page__textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #d8deec;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: #1e293b;
+  background: #fff;
+}
+
+.sku-mappings-page__input,
+.sku-mappings-page__select {
+  height: 40px;
+}
+
+.sku-mappings-page__textarea {
+  min-height: 88px;
+  padding: 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.sku-mappings-page__input:focus,
+.sku-mappings-page__select:focus,
+.sku-mappings-page__textarea:focus {
+  outline: none;
+  border-color: #5b6fb6;
+  box-shadow: 0 0 0 3px rgba(91, 111, 182, 0.16);
+}
+
+.sku-mappings-page__hint {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.sku-mappings-page__form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+.sku-mappings-page__loading,
+.sku-mappings-page__empty {
+  margin: 0;
+  padding: 20px;
+  text-align: center;
+  color: #64748b;
+}
+
+.sku-mappings-page__table-wrap {
+  overflow-x: auto;
+}
+
+.sku-mappings-page__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.sku-mappings-page__table th,
+.sku-mappings-page__table td {
+  padding: 12px 10px;
+  text-align: right;
+  border-bottom: 1px solid #eef2f7;
+  vertical-align: top;
+}
+
+.sku-mappings-page__table th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sku-mappings-page__type-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.sku-mappings-page__type-badge--product {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sku-mappings-page__type-badge--variant {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.sku-mappings-page__type-badge--size {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.sku-mappings-page__type-badge--unmapped {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.sku-mappings-page__skus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sku-mappings-page__sku-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+.sku-mappings-page__empty-skus {
+  color: #94a3b8;
+}
+
+.sku-mappings-page__reason {
+  display: block;
+  font-size: 12px;
+  color: #c2410c;
+  line-height: 1.45;
+  max-width: 220px;
+}
+
+.sku-mappings-page__mono {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.sku-mappings-page__row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sku-mappings-page__row-actions button {
+  border: 1px solid #d8deec;
+  background: #fff;
+  color: #3c4763;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sku-mappings-page__row-actions button:hover {
+  background: #f8fafc;
+}
+
+.sku-mappings-page__row-actions button.sku-mappings-page__delete-btn {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff5f5;
+}
+
+.sku-mappings-page__modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.sku-mappings-page__modal {
+  width: min(640px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+
+.sku-mappings-page__modal h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.sku-mappings-page__modal p {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sku-mappings-page__modal-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+@media (max-width: 768px) {
+  .sku-mappings-page__form-grid {
+    grid-template-columns: 1fr;
+  }
+}

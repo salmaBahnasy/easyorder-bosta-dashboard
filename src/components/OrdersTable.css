@@ -72,6 +72,15 @@
   font-size: 12px;
 }
 
+.orders-table__product-variation {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c3aed;
+  line-height: 1.35;
+}
+
 .orders-table__updated-by {
   min-width: 120px;
   color: #475569;
@@ -184,4 +193,25 @@
   width: 16px;
   height: 16px;
   display: block;
+}
+
+.orders-table__select-col {
+  width: 42px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.orders-table__checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #16a085;
+}
+
+.orders-table__row--selected {
+  background: #ecfdf5 !important;
+}
+
+.orders-table__row--selected:hover {
+  background: #d1fae5 !important;
 }

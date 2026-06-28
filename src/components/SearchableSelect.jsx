@@ -31,6 +31,7 @@ export default function SearchableSelect({
   serverSideSearch = false,
   onSearchChange,
   panelFixed = false,
+  hideSearch = false,
 }) {
   const listId = useId();
   const rootRef = useRef(null);
@@ -166,38 +167,40 @@ export default function SearchableSelect({
       style={panelFixed ? panelStyle ?? undefined : undefined}
       onMouseDown={handlePanelMouseDown}
     >
-      <div className="searchable-select__search-wrap">
-        <span className="searchable-select__search-icon" aria-hidden="true">
-          <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M9 3.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"
-              stroke="currentColor"
-              strokeWidth="1.6"
-            />
-            <path
-              d="m14 14 3.5 3.5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-        </span>
-        <input
-          ref={searchRef}
-          type="search"
-          className="searchable-select__search"
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          onInput={(e) => handleSearchChange(e.target.value)}
-          placeholder={searchPlaceholder}
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          dir="rtl"
-          aria-controls={listId}
-          aria-autocomplete="list"
-        />
-      </div>
+      {!hideSearch ? (
+        <div className="searchable-select__search-wrap">
+          <span className="searchable-select__search-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M9 3.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
+              <path
+                d="m14 14 3.5 3.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+          <input
+            ref={searchRef}
+            type="search"
+            className="searchable-select__search"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            onInput={(e) => handleSearchChange(e.target.value)}
+            placeholder={searchPlaceholder}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            dir="rtl"
+            aria-controls={listId}
+            aria-autocomplete="list"
+          />
+        </div>
+      ) : null}
       <ul
         id={listId}
         className="searchable-select__list"
@@ -250,6 +253,7 @@ export default function SearchableSelect({
       >
         <span
           className={`searchable-select__trigger-text ${!selected ? "searchable-select__trigger-text--placeholder" : ""}`}
+          title={selected ? getOptionLabel(selected) : undefined}
         >
           {displayText}
         </span>

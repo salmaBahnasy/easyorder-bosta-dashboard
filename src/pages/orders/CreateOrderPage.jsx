@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { createOrder } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import CartProductSelect from "../../components/CartProductSelect";
+import CartProductVariantSelect from "../../components/CartProductVariantSelect";
 import FeedbackModal from "../../components/FeedbackModal";
 import { useProductCatalog } from "../../hooks/useProductCatalog";
 import { appHref } from "../../utils/auth";
@@ -23,6 +24,11 @@ import {
   buildEasyOrderCreatePayload,
 } from "../../utils/easyOrderOrderPayload";
 import { validateCreateOrderForm } from "../../utils/createOrderValidation";
+import {
+  applyVariantSelection,
+  clearCartRowVariantFields,
+  loadVariantsForCatalogProduct,
+} from "../../utils/cartProductVariants";
 import "./OrderPayloadDetailsPage.css";
 import "./CreateOrderPage.css";
 
@@ -210,7 +216,7 @@ export default function CreateOrderPage() {
     });
   }
 
-  function handleRowCatalogSelect(rowKey, optionId) {
+  async function handleRowCatalogSelect(rowKey, optionId) {
     if (!optionId) {
       updateCartRow(rowKey, {
         sku: "",
@@ -219,6 +225,7 @@ export default function CreateOrderPage() {
         catalogProductId: null,
         catalogProductKey: "",
         catalogOptionId: "",
+        ...clearCartRowVariantFields(),
       });
       return;
     }
@@ -227,7 +234,47 @@ export default function CreateOrderPage() {
     );
     if (idx === -1) return;
     const fields = productToCartFields(catalogProducts[idx]);
-    updateCartRow(rowKey, { ...fields, price: "", catalogOptionId: optionId });
+    updateCartRow(rowKey, {
+      ...fields,
+      price: "",
+      catalogOptionId: optionId,
+      ...clearCartRowVariantFields(),
+      variantsLoading: true,
+    });
+
+    try {
+      const { variantOptions, variationLabel } = await loadVariantsForCatalogProduct(
+        catalogProducts[idx],
+      );
+      const patch = {
+        variantOptions,
+        variationLabel,
+        variantsLoading: false,
+      };
+      if (variantOptions.length === 1) {
+        Object.assign(patch, applyVariantSelection(variantOptions, variantOptions[0].id));
+      }
+      updateCartRow(rowKey, patch);
+    } catch (error) {
+      console.log(error);
+      updateCartRow(rowKey, { variantsLoading: false });
+    }
+  }
+
+  function handleRowVariantSelect(rowKey, variantId) {
+    const row = cartItems.find((r) => r.key === rowKey);
+    if (!row) return;
+    if (!variantId) {
+      updateCartRow(rowKey, {
+        selectedVariantId: "",
+        productVariantId: "",
+        variationProp: "",
+        variationProps: null,
+        selectedVariantData: null,
+      });
+      return;
+    }
+    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId));
   }
 
   function handleBack() {
@@ -385,15 +432,23 @@ export default function CreateOrderPage() {
                   {cartItems.map((row) => (
                     <tr key={row.key}>
                       <td>
-                        <CartProductSelect
-                          row={row}
-                          catalogProducts={catalogProducts}
-                          catalogLoading={catalogLoading}
-                          onSearchChange={onCatalogSearchChange}
-                          onSelect={(optionId) =>
-                            handleRowCatalogSelect(row.key, optionId)
-                          }
-                        />
+                        <div className="order-details-page__cart-product-cell">
+                          <CartProductSelect
+                            row={row}
+                            catalogProducts={catalogProducts}
+                            catalogLoading={catalogLoading}
+                            onSearchChange={onCatalogSearchChange}
+                            onSelect={(optionId) =>
+                              handleRowCatalogSelect(row.key, optionId)
+                            }
+                          />
+                          <CartProductVariantSelect
+                            row={row}
+                            onSelect={(variantId) =>
+                              handleRowVariantSelect(row.key, variantId)
+                            }
+                          />
+                        </div>
                       </td>
                       <td>
                         <input
