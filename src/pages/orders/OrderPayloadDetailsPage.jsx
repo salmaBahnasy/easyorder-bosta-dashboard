@@ -4,6 +4,7 @@ import { updateOrder, updateOrderStatus, sendOrderToBosta } from "../../api/orde
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import CartProductSelect from "../../components/CartProductSelect";
 import CartProductVariantSelect from "../../components/CartProductVariantSelect";
+import CartProductBostaSkuSelect from "../../components/CartProductBostaSkuSelect";
 import FeedbackModal from "../../components/FeedbackModal";
 import { useProductCatalog } from "../../hooks/useProductCatalog";
 import { appHref } from "../../utils/auth";
@@ -11,6 +12,9 @@ import {
   bostaCityLabel,
   getOrderGovernmentName,
   parseDistrictHintFromAddress,
+  pickOrderBostaCityId,
+  pickOrderBostaDistrictId,
+  resolveBostaLocationForSend,
 } from "../../utils/bostaLocation";
 import {
   createEmptyCartRow,
@@ -32,12 +36,20 @@ import { formatApiErrorMessage } from "../../utils/apiErrors";
 import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
 import {
   applyVariantSelection,
-  appendVariantFieldsToCartLine,
   clearCartRowVariantFields,
   enrichCartRowWithVariants,
   loadVariantsForCatalogProduct,
   validateCartRowsVariants,
 } from "../../utils/cartProductVariants";
+import {
+  applyBostaSkuSelection,
+  clearCartRowBostaSkuFields,
+  enrichCartRowWithBostaSkus,
+  finalizeCartLine,
+  loadBostaSkusForCatalogProduct,
+  resolveBostaSkuForSend,
+  validateCartRowsBostaSkus,
+} from "../../utils/cartBostaSkus";
 import "./OrderPayloadDetailsPage.css";
 
 function cartRowFromOrderItem(item, idx) {
@@ -79,6 +91,10 @@ function cartRowFromOrderItem(item, idx) {
     : Array.isArray(item.variation_props)
       ? item.variation_props
       : null;
+  const bostaSkuCode = String(
+    item.bosta_sku ?? item.bostaSku ?? item.variant?.sku ?? "",
+  ).trim();
+  const bostaSkuName = String(item.bosta_name ?? item.bostaName ?? item.variant?.name ?? "").trim();
   return {
     key: `line-${idx}-${sku || "sku"}-${price}-${quantity}`,
     sku,
@@ -97,6 +113,14 @@ function cartRowFromOrderItem(item, idx) {
     selectedVariantData: variantIsObject ? variant : null,
     variationLabel: "",
     variantsLoading: false,
+    bostaSkuOptions: [],
+    bostaProductLabel: "",
+    selectedBostaSkuCode: bostaSkuCode,
+    selectedBostaSkuData: bostaSkuCode
+      ? { skuCode: bostaSkuCode, name: bostaSkuName || bostaSkuCode }
+      : null,
+    bostaSkusLoading: false,
+    bostaRecommendedSku: "",
   };
 }
 
@@ -256,11 +280,14 @@ export default function OrderPayloadDetailsPage() {
     (async () => {
       const rows = sourceItems.map((item, idx) => cartRowFromOrderItem(item, idx));
       const enriched = await Promise.all(
-        rows.map((row) =>
-          enrichCartRowWithVariants(row, {
+        rows.map(async (row) => {
+          const withVariants = await enrichCartRowWithVariants(row, {
             preselectedVariantId: row.productVariantId || row.selectedVariantId,
-          }),
-        ),
+          });
+          return enrichCartRowWithBostaSkus(withVariants, {
+            preselectedSkuCode: row.selectedBostaSkuCode,
+          });
+        }),
       );
       if (!cancelled) setCartItems(enriched);
     })();
@@ -273,6 +300,8 @@ export default function OrderPayloadDetailsPage() {
           ? orderAddress(order)
           : "102 street mohamed abd el shafy, alexandria",
       cityName: getOrderGovernmentName(order),
+      cityId: pickOrderBostaCityId(order),
+      districtId: pickOrderBostaDistrictId(order),
       note: String(order.note ?? order.notes ?? "").trim(),
       firstName: orderCustomer(order) !== "—" ? orderCustomer(order) : "ahmed",
       mobile: orderPhone(order) !== "—" ? orderPhone(order) : "01028687408",
@@ -359,6 +388,7 @@ export default function OrderPayloadDetailsPage() {
         catalogProductKey: "",
         catalogOptionId: "",
         ...clearCartRowVariantFields(),
+        ...clearCartRowBostaSkuFields(),
       });
       return;
     }
@@ -372,26 +402,61 @@ export default function OrderPayloadDetailsPage() {
       price: "",
       catalogOptionId: optionId,
       ...clearCartRowVariantFields(),
+      ...clearCartRowBostaSkuFields(),
       variantsLoading: true,
+      bostaSkusLoading: true,
     });
 
     try {
-      const { variantOptions, variationLabel } = await loadVariantsForCatalogProduct(
-        catalogProducts[idx],
-      );
+      const product = catalogProducts[idx];
+      const [variantResult, bostaResult] = await Promise.all([
+        loadVariantsForCatalogProduct(product),
+        loadBostaSkusForCatalogProduct(product),
+      ]);
       const patch = {
-        variantOptions,
-        variationLabel,
+        variantOptions: variantResult.variantOptions,
+        variationLabel: variantResult.variationLabel,
         variantsLoading: false,
+        bostaSkuOptions: bostaResult.bostaSkuOptions,
+        bostaProductLabel: bostaResult.bostaProductLabel,
+        bostaRecommendedSku: bostaResult.bostaRecommendedSku,
+        bostaSkusLoading: false,
       };
-      if (variantOptions.length === 1) {
-        Object.assign(patch, applyVariantSelection(variantOptions, variantOptions[0].id));
+      if (variantResult.variantOptions.length === 1) {
+        Object.assign(
+          patch,
+          applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id),
+        );
+      }
+      if (bostaResult.bostaSkuOptions.length === 1) {
+        Object.assign(
+          patch,
+          applyBostaSkuSelection(bostaResult.bostaSkuOptions, bostaResult.bostaSkuOptions[0].skuCode),
+        );
+      } else if (bostaResult.bostaRecommendedSku) {
+        Object.assign(
+          patch,
+          applyBostaSkuSelection(bostaResult.bostaSkuOptions, bostaResult.bostaRecommendedSku),
+        );
       }
       updateCartRow(rowKey, patch);
     } catch (error) {
       console.log(error);
-      updateCartRow(rowKey, { variantsLoading: false });
+      updateCartRow(rowKey, { variantsLoading: false, bostaSkusLoading: false });
     }
+  }
+
+  function handleRowBostaSkuSelect(rowKey, skuCode) {
+    const row = cartItems.find((r) => r.key === rowKey);
+    if (!row) return;
+    if (!skuCode) {
+      updateCartRow(rowKey, {
+        selectedBostaSkuCode: "",
+        selectedBostaSkuData: null,
+      });
+      return;
+    }
+    updateCartRow(rowKey, applyBostaSkuSelection(row.bostaSkuOptions, skuCode));
   }
 
   function handleRowVariantSelect(rowKey, variantId) {
@@ -604,7 +669,8 @@ export default function OrderPayloadDetailsPage() {
       });
       return;
     }
-    if (!String(form.cityId ?? "").trim()) {
+    const { cityId, districtId } = resolveBostaLocationForSend(form, order);
+    if (!cityId) {
       setFeedbackModal({
         open: true,
         variant: "error",
@@ -612,7 +678,7 @@ export default function OrderPayloadDetailsPage() {
       });
       return;
     }
-    if (!String(form.districtId ?? "").trim()) {
+    if (!districtId) {
       setFeedbackModal({
         open: true,
         variant: "error",
@@ -632,7 +698,8 @@ export default function OrderPayloadDetailsPage() {
       });
       return;
     }
-    if (!String(form.cityId ?? "").trim() || !String(form.districtId ?? "").trim()) {
+    const { cityId, districtId } = resolveBostaLocationForSend(form, order);
+    if (!cityId || !districtId) {
       setFeedbackModal({
         open: true,
         variant: "error",
@@ -641,13 +708,24 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
+    const bostaSkuResult = resolveBostaSkuForSend(cartItems);
+    if (bostaSkuResult.error) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: bostaSkuResult.error,
+      });
+      return;
+    }
+
     try {
       setSendingToBosta(true);
       await sendOrderToBosta(orderIdForStatusUpdate, {
-        cityId: form.cityId,
-        districtId: form.districtId,
+        cityId,
+        districtId,
         note: form.note,
         allowToOpenPackage: form.allowToOpenPackage,
+        bostaSku: bostaSkuResult.bostaSku,
       });
       setIsConfirmModalOpen(false);
       setFeedbackModal({
@@ -692,6 +770,16 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
+    const bostaErrors = validateCartRowsBostaSkus(linesForPayload);
+    if (bostaErrors.length > 0) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: bostaErrors.join("\n"),
+      });
+      return;
+    }
+
     const initialStatus =
       order?.orderStatus ??
       order?.order_status ??
@@ -729,7 +817,7 @@ export default function OrderPayloadDetailsPage() {
         },
         ...(productId ? { product_id: productId } : {}),
       };
-      return appendVariantFieldsToCartLine(line, row, productId);
+      return finalizeCartLine(line, row, productId);
     });
     const payload = {
       full_name: form.firstName,
@@ -746,6 +834,18 @@ export default function OrderPayloadDetailsPage() {
       note: String(form.note ?? "").trim(),
       ...(showShipFields ? { shipping_status: form.shipping_status } : {}),
     };
+    if (String(form.cityId ?? "").trim()) {
+      payload.city_id = form.cityId;
+      payload.cityId = form.cityId;
+      payload.bosta_city_id = form.cityId;
+      payload.bostaCityId = form.cityId;
+    }
+    if (String(form.districtId ?? "").trim()) {
+      payload.district_id = form.districtId;
+      payload.districtId = form.districtId;
+      payload.bosta_district_id = form.districtId;
+      payload.bostaDistrictId = form.districtId;
+    }
 
     try {
       setSavingOrder(true);
@@ -974,6 +1074,12 @@ export default function OrderPayloadDetailsPage() {
                               row={row}
                               onSelect={(variantId) =>
                                 handleRowVariantSelect(row.key, variantId)
+                              }
+                            />
+                            <CartProductBostaSkuSelect
+                              row={row}
+                              onSelect={(skuCode) =>
+                                handleRowBostaSkuSelect(row.key, skuCode)
                               }
                             />
                           </div>

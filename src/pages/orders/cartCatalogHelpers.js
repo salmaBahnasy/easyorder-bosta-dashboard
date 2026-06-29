@@ -99,6 +99,12 @@ export function createEmptyCartRow() {
     selectedVariantData: null,
     variationLabel: "",
     variantsLoading: false,
+    bostaSkuOptions: [],
+    bostaProductLabel: "",
+    selectedBostaSkuCode: "",
+    selectedBostaSkuData: null,
+    bostaSkusLoading: false,
+    bostaRecommendedSku: "",
   };
 }
 

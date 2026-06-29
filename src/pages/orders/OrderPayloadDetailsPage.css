@@ -620,8 +620,8 @@
 }
 
 .order-details-page__cart-table td:first-child {
-  min-width: 420px;
-  max-width: 560px;
+  min-width: 560px;
+  max-width: 720px;
   overflow: visible;
 }
 
@@ -652,7 +652,7 @@
   border-radius: 12px;
   overflow: hidden;
   background: #fff;
-  min-width: 400px;
+  min-width: 520px;
   width: 100%;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
@@ -759,6 +759,65 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.cart-bosta-sku-select {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 0 0 148px;
+  width: 148px;
+  padding: 6px 10px;
+  background: linear-gradient(180deg, #ecfdf5 0%, #fff 100%);
+  border-inline-start: 1px solid #d1fae5;
+}
+
+.cart-bosta-sku-select--loading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.cart-bosta-sku-select__control {
+  width: 100%;
+  min-width: 0;
+}
+
+.cart-bosta-sku-select__control .searchable-select__trigger {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.cart-bosta-sku-select__control .searchable-select__trigger:focus {
+  border-color: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+}
+
+.cart-bosta-sku-select__control .searchable-select__trigger-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #047857;
+}
+
+.cart-bosta-sku-select__control .searchable-select__chevron {
+  color: #10b981;
+}
+
+.cart-bosta-sku-select__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #a7f3d0;
+  border-top-color: #10b981;
+  border-radius: 50%;
+  animation: cart-variant-spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
 .order-details-page__cart-variation {

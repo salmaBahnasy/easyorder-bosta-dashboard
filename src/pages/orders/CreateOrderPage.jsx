@@ -4,6 +4,7 @@ import { createOrder } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import CartProductSelect from "../../components/CartProductSelect";
 import CartProductVariantSelect from "../../components/CartProductVariantSelect";
+import CartProductBostaSkuSelect from "../../components/CartProductBostaSkuSelect";
 import FeedbackModal from "../../components/FeedbackModal";
 import { useProductCatalog } from "../../hooks/useProductCatalog";
 import { appHref } from "../../utils/auth";
@@ -29,6 +30,11 @@ import {
   clearCartRowVariantFields,
   loadVariantsForCatalogProduct,
 } from "../../utils/cartProductVariants";
+import {
+  applyBostaSkuSelection,
+  clearCartRowBostaSkuFields,
+  loadBostaSkusForCatalogProduct,
+} from "../../utils/cartBostaSkus";
 import "./OrderPayloadDetailsPage.css";
 import "./CreateOrderPage.css";
 
@@ -226,6 +232,7 @@ export default function CreateOrderPage() {
         catalogProductKey: "",
         catalogOptionId: "",
         ...clearCartRowVariantFields(),
+        ...clearCartRowBostaSkuFields(),
       });
       return;
     }
@@ -239,26 +246,61 @@ export default function CreateOrderPage() {
       price: "",
       catalogOptionId: optionId,
       ...clearCartRowVariantFields(),
+      ...clearCartRowBostaSkuFields(),
       variantsLoading: true,
+      bostaSkusLoading: true,
     });
 
     try {
-      const { variantOptions, variationLabel } = await loadVariantsForCatalogProduct(
-        catalogProducts[idx],
-      );
+      const product = catalogProducts[idx];
+      const [variantResult, bostaResult] = await Promise.all([
+        loadVariantsForCatalogProduct(product),
+        loadBostaSkusForCatalogProduct(product),
+      ]);
       const patch = {
-        variantOptions,
-        variationLabel,
+        variantOptions: variantResult.variantOptions,
+        variationLabel: variantResult.variationLabel,
         variantsLoading: false,
+        bostaSkuOptions: bostaResult.bostaSkuOptions,
+        bostaProductLabel: bostaResult.bostaProductLabel,
+        bostaRecommendedSku: bostaResult.bostaRecommendedSku,
+        bostaSkusLoading: false,
       };
-      if (variantOptions.length === 1) {
-        Object.assign(patch, applyVariantSelection(variantOptions, variantOptions[0].id));
+      if (variantResult.variantOptions.length === 1) {
+        Object.assign(
+          patch,
+          applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id),
+        );
+      }
+      if (bostaResult.bostaSkuOptions.length === 1) {
+        Object.assign(
+          patch,
+          applyBostaSkuSelection(bostaResult.bostaSkuOptions, bostaResult.bostaSkuOptions[0].skuCode),
+        );
+      } else if (bostaResult.bostaRecommendedSku) {
+        Object.assign(
+          patch,
+          applyBostaSkuSelection(bostaResult.bostaSkuOptions, bostaResult.bostaRecommendedSku),
+        );
       }
       updateCartRow(rowKey, patch);
     } catch (error) {
       console.log(error);
-      updateCartRow(rowKey, { variantsLoading: false });
+      updateCartRow(rowKey, { variantsLoading: false, bostaSkusLoading: false });
     }
+  }
+
+  function handleRowBostaSkuSelect(rowKey, skuCode) {
+    const row = cartItems.find((r) => r.key === rowKey);
+    if (!row) return;
+    if (!skuCode) {
+      updateCartRow(rowKey, {
+        selectedBostaSkuCode: "",
+        selectedBostaSkuData: null,
+      });
+      return;
+    }
+    updateCartRow(rowKey, applyBostaSkuSelection(row.bostaSkuOptions, skuCode));
   }
 
   function handleRowVariantSelect(rowKey, variantId) {
@@ -446,6 +488,12 @@ export default function CreateOrderPage() {
                             row={row}
                             onSelect={(variantId) =>
                               handleRowVariantSelect(row.key, variantId)
+                            }
+                          />
+                          <CartProductBostaSkuSelect
+                            row={row}
+                            onSelect={(skuCode) =>
+                              handleRowBostaSkuSelect(row.key, skuCode)
                             }
                           />
                         </div>

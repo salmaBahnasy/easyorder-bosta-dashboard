@@ -1,22 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  downloadOrdersExportFile,
+  exportOrders,
   getEmployees,
   getOrders,
   getProducts,
   resolveEmployeeOrderFilterParams,
-  sendOrdersToBostaBulk,
 } from "../../api/ordersApi";
 import { appHref } from "../../utils/auth";
-import { formatApiErrorMessage } from "../../utils/apiErrors";
-import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
-import FeedbackModal from "../../components/FeedbackModal";
 import OrdersTable from "../../components/OrdersTable";
-import {
-  orderDetailRouteId,
-  orderNote,
-  orderRowKey,
-} from "../../utils/orderDisplay";
+import { orderRowKey } from "../../utils/orderDisplay";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
 import {
   getProductFilterId,
@@ -30,13 +24,6 @@ import {
   writeOrdersListState,
 } from "../../utils/ordersListState";
 import "./OrdersPage.css";
-import "./OrderPayloadDetailsPage.css";
-
-function orderSelectionId(order, index) {
-  const id = orderDetailRouteId(order);
-  if (id != null && String(id).trim() !== "") return String(id).trim();
-  return orderRowKey(order, index);
-}
 
 export default function OrdersPage() {
   const navigate = useNavigate();
@@ -52,6 +39,7 @@ export default function OrdersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -59,17 +47,6 @@ export default function OrdersPage() {
   const [highlightOrderId, setHighlightOrderId] = useState(
     () => bootStateRef.current.focusedOrderId ?? null,
   );
-  const [selectedOrderIds, setSelectedOrderIds] = useState(() => new Set());
-  const [bulkSendOpen, setBulkSendOpen] = useState(false);
-  const [bulkCityId, setBulkCityId] = useState("");
-  const [bulkDistrictId, setBulkDistrictId] = useState("");
-  const [sendingBulkToBosta, setSendingBulkToBosta] = useState(false);
-  const [feedbackModal, setFeedbackModal] = useState({
-    open: false,
-    variant: "success",
-    message: "",
-  });
-
   const statusOptions = [
     { value: "", label: "كل الحالات" },
     { value: "new", label: "قيد المراجعة" },
@@ -160,25 +137,30 @@ export default function OrdersPage() {
     return selectedAliases.includes(orderStatus);
   }
 
+  function buildOrdersApiFilters(nextFilters = filters) {
+    const employeeId = String(nextFilters.employee ?? "").trim();
+    return {
+      status: nextFilters.status || undefined,
+      ...resolveEmployeeOrderFilterParams(employees, employeeId),
+      from: nextFilters.from || undefined,
+      to: nextFilters.to || undefined,
+      order_source: nextFilters.order_source || undefined,
+      order_type: nextFilters.order_type || undefined,
+      shipping_status: nextFilters.shipping_status || undefined,
+      product_id: nextFilters.product_id?.trim() || undefined,
+      phone: nextFilters.phone?.trim() || undefined,
+      customer_name: nextFilters.customer_name?.trim() || undefined,
+    };
+  }
+
   async function fetchOrders(pageNumber = page, nextFilters = filters) {
     try {
       setLoading(true);
 
-      const employeeId = String(nextFilters.employee ?? "").trim();
-
       const result = await getOrders({
         page: pageNumber,
         limit,
-        status: nextFilters.status || undefined,
-        ...resolveEmployeeOrderFilterParams(employees, employeeId),
-        from: nextFilters.from || undefined,
-        to: nextFilters.to || undefined,
-        order_source: nextFilters.order_source || undefined,
-        order_type: nextFilters.order_type || undefined,
-        shipping_status: nextFilters.shipping_status || undefined,
-        product_id: nextFilters.product_id?.trim() || undefined,
-        phone: nextFilters.phone?.trim() || undefined,
-        customer_name: nextFilters.customer_name?.trim() || undefined,
+        ...buildOrdersApiFilters(nextFilters),
       });
 
       const { list, page, total, totalPages } = parseOrdersResponse(result);
@@ -209,10 +191,6 @@ export default function OrdersPage() {
     const timer = window.setTimeout(() => setHighlightOrderId(null), 5000);
     return () => window.clearTimeout(timer);
   }, [highlightOrderId, loading, orders]);
-
-  useEffect(() => {
-    setSelectedOrderIds(new Set());
-  }, [page]);
 
   useEffect(() => {
     let cancelled = false;
@@ -300,6 +278,34 @@ export default function OrdersPage() {
     fetchOrders(1, filters);
   }
 
+  async function handleExportOrders() {
+    try {
+      setExporting(true);
+      const result = await exportOrders(buildOrdersApiFilters());
+      downloadOrdersExportFile(result);
+
+      const rows = result.rows != null ? Number(result.rows) : null;
+      const totalMatched = result.total != null ? Number(result.total) : null;
+      let message = "تم تنزيل ملف الطلبات بنجاح";
+      if (rows != null && !Number.isNaN(rows)) {
+        message = `تم تنزيل ${rows.toLocaleString("ar-EG")} صف في ملف Excel`;
+      }
+      if (result.truncated) {
+        const totalText =
+          totalMatched != null && !Number.isNaN(totalMatched)
+            ? ` من أصل ${totalMatched.toLocaleString("ar-EG")}`
+            : "";
+        message += `\nتم اقتصار الملف على الحد الأقصى للتصدير${totalText}`;
+      }
+      alert(message);
+    } catch (error) {
+      console.log(error);
+      alert(error?.message ?? "تعذر تصدير الطلبات");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function clearFilters() {
     const clearedFilters = getDefaultOrdersFilters();
     setFilters(clearedFilters);
@@ -323,104 +329,6 @@ export default function OrdersPage() {
       state: { copyFromOrder: order, ordersListState },
     });
   }
-
-  function toggleOrderSelect(orderId) {
-    setSelectedOrderIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
-      return next;
-    });
-  }
-
-  function toggleAllOrders(checked) {
-    if (!checked) {
-      setSelectedOrderIds(new Set());
-      return;
-    }
-    const next = new Set();
-    filteredOrders.forEach((order, index) => {
-      next.add(orderSelectionId(order, index));
-    });
-    setSelectedOrderIds(next);
-  }
-
-  function buildPerOrderOverrides(orderIds) {
-    const overrides = {};
-    for (const orderId of orderIds) {
-      const order = filteredOrders.find(
-        (item, index) => orderSelectionId(item, index) === orderId,
-      );
-      if (!order) continue;
-      const note = orderNote(order);
-      if (note) overrides[orderId] = { note };
-    }
-    return overrides;
-  }
-
-  function handleOpenBulkSendModal() {
-    if (selectedOrderIds.size === 0) return;
-    setBulkSendOpen(true);
-  }
-
-  function handleCloseBulkSendModal() {
-    if (sendingBulkToBosta) return;
-    setBulkSendOpen(false);
-  }
-
-  async function handleBulkSendToBosta() {
-    const orderIds = Array.from(selectedOrderIds);
-    if (orderIds.length === 0) return;
-
-    if (!String(bulkCityId ?? "").trim()) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "اختاري المحافظة قبل الإرسال إلى بوسطة",
-      });
-      return;
-    }
-    if (!String(bulkDistrictId ?? "").trim()) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "اختاري المنطقة قبل الإرسال إلى بوسطة",
-      });
-      return;
-    }
-
-    const perOrderOverrides = buildPerOrderOverrides(orderIds);
-
-    try {
-      setSendingBulkToBosta(true);
-      await sendOrdersToBostaBulk({
-        orderIds,
-        cityId: bulkCityId,
-        districtId: bulkDistrictId,
-        perOrderOverrides,
-      });
-      setBulkSendOpen(false);
-      setSelectedOrderIds(new Set());
-      setFeedbackModal({
-        open: true,
-        variant: "success",
-        message: `تم إرسال ${orderIds.length} طلب إلى بوسطة بنجاح`,
-      });
-      fetchOrders(page, filters);
-    } catch (error) {
-      console.error("[send-to-bosta-bulk]", error?.response?.data ?? error);
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: formatApiErrorMessage(error, "تعذر إرسال الطلبات إلى بوسطة"),
-      });
-    } finally {
-      setSendingBulkToBosta(false);
-    }
-  }
-
-  const selectedCount = selectedOrderIds.size;
-
   const employeeOptions = useMemo(() => {
     const mapped = employees
       .map((employee) => ({
@@ -497,8 +405,16 @@ export default function OrdersPage() {
             + إنشاء طلب
           </button>
           <button
+            onClick={handleExportOrders}
+            disabled={loading || exporting}
+            className="orders-page__btn orders-page__btn--export"
+            type="button"
+          >
+            {exporting ? "جاري التصدير..." : "تصدير Excel"}
+          </button>
+          <button
             onClick={() => fetchOrders(1)}
-            disabled={loading}
+            disabled={loading || exporting}
             className="orders-page__btn orders-page__btn--secondary"
             type="button"
           >
@@ -697,42 +613,11 @@ export default function OrdersPage() {
         <p className="orders-page__loading">جاري تحميل الطلبات...</p>
       ) : (
         <>
-          <div className="orders-page__bulk-bar">
-            <span className="orders-page__bulk-count">
-              {selectedCount > 0
-                ? `${selectedCount.toLocaleString("ar-EG")} طلب محدد`
-                : "حددي طلبات من الجدول للإرسال إلى بوسطة"}
-            </span>
-            <div className="orders-page__bulk-actions">
-              {selectedCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrderIds(new Set())}
-                  className="orders-page__btn orders-page__btn--outline"
-                >
-                  إلغاء التحديد
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={handleOpenBulkSendModal}
-                disabled={selectedCount === 0 || loading}
-                className="orders-page__btn orders-page__btn--bosta"
-              >
-                إرسال إلى بوسطة
-                {selectedCount > 0 ? ` (${selectedCount})` : ""}
-              </button>
-            </div>
-          </div>
-
           <OrdersTable
             orders={filteredOrders}
             highlightOrderId={highlightOrderId}
             onViewDetails={handleViewDetails}
             onCopyCustomer={handleCopyCustomer}
-            selectedOrderIds={selectedOrderIds}
-            onToggleOrderSelect={toggleOrderSelect}
-            onToggleAllOrders={toggleAllOrders}
           />
 
           <div className="orders-page__pagination">
@@ -761,62 +646,6 @@ export default function OrdersPage() {
         </>
       )}
 
-      {bulkSendOpen ? (
-        <div
-          className="orders-page__modal-backdrop"
-          role="presentation"
-          onClick={handleCloseBulkSendModal}
-        >
-          <div
-            className="orders-page__modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="bulk-bosta-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="bulk-bosta-title">إرسال {selectedCount} طلب إلى بوسطة</h3>
-            <p className="orders-page__modal-hint">
-              اختاري المحافظة والمنطقة المشتركة للطلبات المحددة. ملاحظات الطلبات
-              الفردية تُرسل تلقائيًا إن وُجدت.
-            </p>
-            <BostaCityDistrictFields
-              cityId={bulkCityId}
-              districtId={bulkDistrictId}
-              onCityChange={(cityId) => {
-                setBulkCityId(cityId);
-                setBulkDistrictId("");
-              }}
-              onDistrictChange={setBulkDistrictId}
-              rowClassName="orders-page__bulk-location-row"
-            />
-            <div className="orders-page__modal-actions">
-              <button
-                type="button"
-                onClick={handleBulkSendToBosta}
-                disabled={sendingBulkToBosta}
-                className="orders-page__btn orders-page__btn--bosta"
-              >
-                {sendingBulkToBosta ? "جاري الإرسال..." : "تأكيد الإرسال"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCloseBulkSendModal}
-                disabled={sendingBulkToBosta}
-                className="orders-page__btn orders-page__btn--outline"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <FeedbackModal
-        open={feedbackModal.open}
-        variant={feedbackModal.variant}
-        message={feedbackModal.message}
-        onClose={() => setFeedbackModal((prev) => ({ ...prev, open: false }))}
-      />
     </div>
   );
 }

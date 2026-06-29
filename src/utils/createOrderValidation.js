@@ -1,4 +1,5 @@
 import { validateCartRowsVariants } from "./cartProductVariants";
+import { validateCartRowsBostaSkus } from "./cartBostaSkus";
 
 export function normalizePhoneDigits(value) {
   return String(value ?? "").replace(/\D/g, "");
@@ -23,6 +24,7 @@ export function validateCreateOrderForm(form, cartItems) {
   }
 
   errors.push(...validateCartRowsVariants(cartItems));
+  errors.push(...validateCartRowsBostaSkus(cartItems));
 
   const phoneDigits = normalizePhoneDigits(form?.mobile);
   if (!phoneDigits) {

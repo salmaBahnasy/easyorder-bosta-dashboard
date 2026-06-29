@@ -17,6 +17,7 @@ export function mapEasyOrderStatusFields(backendStatus) {
 }
 
 import { buildCartItemVariantObject } from "./cartProductVariants";
+import { appendBostaSkuFieldsToCartLine } from "./cartBostaSkus";
 
 export function buildEasyOrderCartItems(linesForPayload) {
   return (linesForPayload ?? []).map((row) => {
@@ -43,9 +44,12 @@ export function buildEasyOrderCartItems(linesForPayload) {
       item.product.id = productId;
     }
 
-    const variant = buildCartItemVariantObject(row, productId || null);
-    if (variant) {
-      item.variant = variant;
+    const bostaSku = String(row?.selectedBostaSkuCode ?? "").trim();
+    if (bostaSku) {
+      appendBostaSkuFieldsToCartLine(item, row, productId || null);
+    } else {
+      const variant = buildCartItemVariantObject(row, productId || null);
+      if (variant) item.variant = variant;
     }
 
     return item;

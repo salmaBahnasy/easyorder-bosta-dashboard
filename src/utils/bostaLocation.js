@@ -160,3 +160,34 @@ export function parseDistrictHintFromAddress(address, governmentName) {
 
   return parts[start] ?? "";
 }
+
+export function pickOrderBostaCityId(order) {
+  if (!order || typeof order !== "object") return "";
+  return String(
+    order.bosta_city_id ??
+      order.bostaCityId ??
+      order.city_id ??
+      order.cityId ??
+      "",
+  ).trim();
+}
+
+export function pickOrderBostaDistrictId(order) {
+  if (!order || typeof order !== "object") return "";
+  return String(
+    order.bosta_district_id ??
+      order.bostaDistrictId ??
+      order.district_id ??
+      order.districtId ??
+      "",
+  ).trim();
+}
+
+/** Prefer form selection, then values already stored on the order. */
+export function resolveBostaLocationForSend(form, order) {
+  const cityId =
+    String(form?.cityId ?? "").trim() || pickOrderBostaCityId(order);
+  const districtId =
+    String(form?.districtId ?? "").trim() || pickOrderBostaDistrictId(order);
+  return { cityId, districtId };
+}

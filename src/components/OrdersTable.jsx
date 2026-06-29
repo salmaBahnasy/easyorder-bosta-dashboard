@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import {
-  orderDetailRouteId,
   orderCartProductLines,
   orderCustomer,
   orderDate,
@@ -95,20 +94,11 @@ function WhatsAppIcon() {
   );
 }
 
-function orderSelectionId(order, index) {
-  const id = orderDetailRouteId(order);
-  if (id != null && String(id).trim() !== "") return String(id).trim();
-  return orderRowKey(order, index);
-}
-
 export default function OrdersTable({
   orders,
   onViewDetails,
   onCopyCustomer,
   highlightOrderId,
-  selectedOrderIds,
-  onToggleOrderSelect,
-  onToggleAllOrders,
 }) {
   const highlightRowRef = useRef(null);
 
@@ -120,20 +110,6 @@ export default function OrdersTable({
     });
   }, [highlightOrderId, orders]);
 
-  const selectionEnabled = typeof onToggleOrderSelect === "function";
-  const selectedSet =
-    selectedOrderIds instanceof Set
-      ? selectedOrderIds
-      : new Set(selectedOrderIds ?? []);
-  const allVisibleSelected =
-    selectionEnabled &&
-    orders.length > 0 &&
-    orders.every((order, index) =>
-      selectedSet.has(orderSelectionId(order, index)),
-    );
-  const someVisibleSelected =
-    selectionEnabled &&
-    orders.some((order, index) => selectedSet.has(orderSelectionId(order, index)));
 
   const openWhatsAppConfirm = (order) => {
     let phone = String(order?.phone || "").replace(/\D/g, "");
@@ -173,20 +149,6 @@ export default function OrdersTable({
       <table className="orders-table">
         <thead>
           <tr>
-            {selectionEnabled ? (
-              <th className="orders-table__select-col">
-                <input
-                  type="checkbox"
-                  className="orders-table__checkbox"
-                  checked={allVisibleSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
-                  }}
-                  onChange={(e) => onToggleAllOrders?.(e.target.checked)}
-                  aria-label="تحديد كل الطلبات في الصفحة"
-                />
-              </th>
-            ) : null}
             <th>رقم الطلب</th>
             <th>العميل</th>
             <th>الموبايل</th>
@@ -204,8 +166,6 @@ export default function OrdersTable({
         <tbody>
           {orders.map((order, index) => {
             const rowKey = orderRowKey(order, index);
-            const selectionId = orderSelectionId(order, index);
-            const isSelected = selectionEnabled && selectedSet.has(selectionId);
             const productLines = orderCartProductLines(order);
             const statusView = getStatusPresentation(orderStatus(order));
             const typeLabel = orderTypeDisplayLabel(orderType(order));
@@ -223,26 +183,10 @@ export default function OrdersTable({
                 className={
                   isHighlighted
                     ? "orders-table__row orders-table__row--highlighted"
-                    : isSelected
-                      ? "orders-table__row orders-table__row--selected"
                       : "orders-table__row"
                 }
                 title="اضغطي لفتح تفاصيل الطلب"
               >
-                {selectionEnabled ? (
-                  <td
-                    className="orders-table__select-col"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      className="orders-table__checkbox"
-                      checked={isSelected}
-                      onChange={() => onToggleOrderSelect(selectionId)}
-                      aria-label={`تحديد طلب ${orderReferenceDisplay(order)}`}
-                    />
-                  </td>
-                ) : null}
                 <td>
                   <div className="orders-table__ref-cell">
                     <span>{orderReferenceDisplay(order)}</span>

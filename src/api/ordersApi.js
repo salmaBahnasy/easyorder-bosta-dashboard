@@ -101,6 +101,88 @@ export function resolveEmployeeOrderFilterParams(
   return { employee_id: id };
 }
 
+/** Shared list/export filters — same query shape as `GET /orders`. */
+export function buildOrdersListFilterParams({
+  status,
+  employee_id,
+  employeeId,
+  phone,
+  customer_name,
+  customerName,
+  full_name,
+  fullName,
+  name,
+  from,
+  to,
+  order_source,
+  order_type,
+  shipping_status,
+  product_id,
+  productId,
+  product_sku,
+  productSku,
+  maxRows,
+} = {}) {
+  const employee = employee_id ?? employeeId;
+  const product = product_id ?? productId;
+  const sku = product_sku ?? productSku;
+  const customerNameQuery = [
+    customer_name,
+    customerName,
+    full_name,
+    fullName,
+    name,
+  ]
+    .map((v) => String(v ?? "").trim())
+    .find(Boolean);
+
+  const params = {
+    status,
+    employee_id: employee,
+    phone,
+    customer_name: customerNameQuery,
+    from: toApiQueryDate(from, false),
+    to: toApiQueryDate(to, true),
+    order_source,
+    order_type,
+    shipping_status,
+    product_id: product,
+    product_sku: sku,
+    maxRows,
+  };
+
+  return Object.fromEntries(
+    Object.entries(params).filter(
+      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
+    ),
+  );
+}
+
+function parseExportFilename(contentDisposition, fallback = "orders.xlsx") {
+  const header = String(contentDisposition ?? "");
+  if (!header) return fallback;
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+  const plainMatch = /filename="?([^";]+)"?/i.exec(header);
+  return plainMatch?.[1]?.trim() || fallback;
+}
+
+async function readBlobErrorMessage(blob) {
+  try {
+    const text = await blob.text();
+    const json = JSON.parse(text);
+    return json?.message ?? json?.error ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** `GET /api/{system}/added-orders` */
 export async function getAddedOrders({
   page = 1,
@@ -157,64 +239,63 @@ export async function getOrderByReference(orderReference, { presented = true } =
 export async function getOrders({
   page = 1,
   limit = 50,
-  status,
-  employee_id,
-  employeeId,
-  phone,
-  customer_name,
-  customerName,
-  full_name,
-  fullName,
-  name,
-  from,
-  to,
-  order_source,
-  order_type,
-  shipping_status,
-  product_id,
-  productId,
-  product_sku,
-  productSku,
+  ...filterParams
 } = {}) {
-  const employee = employee_id ?? employeeId;
-  const product = product_id ?? productId;
-  const sku = product_sku ?? productSku;
-  const customerNameQuery = [
-    customer_name,
-    customerName,
-    full_name,
-    fullName,
-    name,
-  ]
-    .map((v) => String(v ?? "").trim())
-    .find(Boolean);
-  const params = {
-    page,
-    limit,
-    status,
-    employee_id: employee,
-    phone,
-    customer_name: customerNameQuery,
-    from: toApiQueryDate(from, false),
-    to: toApiQueryDate(to, true),
-    order_source,
-    order_type,
-    shipping_status,
-    product_id: product,
-    product_sku: sku,
-  };
-
-  const cleaned = Object.fromEntries(
-    Object.entries(params).filter(
-      ([, v]) => v !== undefined && v !== null && String(v).trim() !== "",
-    ),
-  );
+  const params = buildOrdersListFilterParams(filterParams);
+  params.page = page;
+  params.limit = limit;
 
   const response = await apiClient.get(dashboardApiPath("orders"), {
-    params: cleaned,
+    params,
   });
 
   return response.data;
+}
+
+/** `GET /api/{system}/orders/export` — Excel download with same filters as list. */
+export async function exportOrders(filterParams = {}) {
+  const params = buildOrdersListFilterParams(filterParams);
+
+  try {
+    const response = await apiClient.get(dashboardApiPath("orders/export"), {
+      params,
+      responseType: "blob",
+      ...authorizedRequestConfig(),
+    });
+
+    const contentType = String(response.headers?.["content-type"] ?? "");
+    if (contentType.includes("application/json")) {
+      const message = await readBlobErrorMessage(response.data);
+      throw new Error(message ?? "تعذر تصدير الطلبات");
+    }
+
+    return {
+      blob: response.data,
+      filename: parseExportFilename(
+        response.headers?.["content-disposition"],
+        "orders.xlsx",
+      ),
+      total: response.headers?.["x-export-total"],
+      rows: response.headers?.["x-export-rows"],
+      truncated: String(response.headers?.["x-export-truncated"] ?? "").toLowerCase() === "true",
+    };
+  } catch (error) {
+    const blob = error?.response?.data;
+    if (blob instanceof Blob) {
+      const message = await readBlobErrorMessage(blob);
+      if (message) throw new Error(message);
+    }
+    throw error;
+  }
+}
+
+export function downloadOrdersExportFile({ blob, filename = "orders.xlsx" }) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function getOrderDetails(orderId) {
@@ -273,6 +354,16 @@ export async function getSkuMappingByType(mappingType, entityId) {
   const id = String(entityId ?? "").trim();
   const response = await apiClient.get(
     dashboardApiPath(`bosta/sku-mappings/${type}/${encodeURIComponent(id)}`),
+  );
+  return response.data;
+}
+
+/** Bosta SKUs for a product — `GET /api/{system}/bosta/sku-mappings/by-product/:productId` */
+export async function getBostaSkusByProduct(productId) {
+  const id = String(productId ?? "").trim();
+  if (!id) return null;
+  const response = await apiClient.get(
+    dashboardApiPath(`bosta/sku-mappings/by-product/${encodeURIComponent(id)}`),
   );
   return response.data;
 }
@@ -351,7 +442,7 @@ export async function updateOrder(orderId, payload) {
 /** إرسال الطلب إلى بوسطة — `POST /api/{system}/orders/:orderId/send-to-bosta` */
 export async function sendOrderToBosta(
   orderId,
-  { cityId, districtId, note, allowToOpenPackage } = {},
+  { cityId, districtId, note, allowToOpenPackage, bostaSku } = {},
 ) {
   const body = {
     cityId: String(cityId ?? "").trim(),
@@ -359,37 +450,10 @@ export async function sendOrderToBosta(
     note: String(note ?? "").trim(),
     allowToOpenPackage: Boolean(allowToOpenPackage),
   };
+  const sku = String(bostaSku ?? "").trim();
+  if (sku) body.bosta_sku = sku;
   const response = await apiClient.post(
     dashboardApiPath(`orders/${orderId}/send-to-bosta`),
-    body,
-    authorizedRequestConfig(),
-  );
-  return response.data;
-}
-
-/** إرسال عدة طلبات إلى بوسطة — `POST /api/{system}/orders/send-to-bosta/bulk` */
-export async function sendOrdersToBostaBulk({
-  orderIds,
-  cityId,
-  districtId,
-  perOrderOverrides,
-} = {}) {
-  const body = {
-    orderIds: (orderIds ?? [])
-      .map((id) => String(id ?? "").trim())
-      .filter(Boolean),
-    cityId: String(cityId ?? "").trim(),
-    districtId: String(districtId ?? "").trim(),
-  };
-  if (
-    perOrderOverrides &&
-    typeof perOrderOverrides === "object" &&
-    Object.keys(perOrderOverrides).length > 0
-  ) {
-    body.perOrderOverrides = perOrderOverrides;
-  }
-  const response = await apiClient.post(
-    dashboardApiPath("orders/send-to-bosta/bulk"),
     body,
     authorizedRequestConfig(),
   );
