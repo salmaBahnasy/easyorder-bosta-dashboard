@@ -23,6 +23,8 @@ import { buildCreateOrderDraftFromOrder } from "../../utils/orderCustomerDraft";
 import {
   buildEasyOrderCartItems,
   buildEasyOrderCreatePayload,
+  PAYMENT_METHOD_OPTIONS,
+  paymentMethodOptionLabel,
 } from "../../utils/easyOrderOrderPayload";
 import { validateCreateOrderForm } from "../../utils/createOrderValidation";
 import {
@@ -86,11 +88,6 @@ const SHIPPING_STATUS_OPTIONS = [
   { value: "failed", label: "فشل" },
 ];
 
-const PAYMENT_METHOD_OPTIONS = [
-  { value: "COD", label: "COD (دفع عند الاستلام)" },
-  { value: "Instapay", label: "إنستاباي" },
-];
-
 const backendStatusMap = {
   لاغي: "canceled",
   "لا يرد": "no_replay",
@@ -138,7 +135,7 @@ export default function CreateOrderPage() {
     mobile: "",
     mobile2: "",
     shipping_cost: "",
-    payment_method: "COD",
+    payment_method: "cod",
     order_type: "new",
     order_source: "store",
     shipping_status: "in_progress",
@@ -397,6 +394,8 @@ export default function CreateOrderPage() {
       phone2: phone2Digits,
       address: form.firstLine,
       government: form.cityName,
+      cityId: form.cityId,
+      districtId: form.districtId,
       orderSource: form.order_source,
       orderType: form.order_type,
       backendStatus,
@@ -578,6 +577,7 @@ export default function CreateOrderPage() {
                     className="order-details-page__input"
                     value={form.payment_method}
                     onChange={(e) => setField("payment_method", e.target.value)}
+                    required
                   >
                     {PAYMENT_METHOD_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -785,7 +785,7 @@ export default function CreateOrderPage() {
             </div>
             <div className="order-details-page__summary-row">
               <span>طريقة الدفع</span>
-              <strong>{form.payment_method || "—"}</strong>
+              <strong>{paymentMethodOptionLabel(form.payment_method)}</strong>
             </div>
             
             <div className="order-details-page__summary-row">

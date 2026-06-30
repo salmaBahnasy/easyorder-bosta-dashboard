@@ -1,5 +1,6 @@
 import { validateCartRowsVariants } from "./cartProductVariants";
 import { validateCartRowsBostaSkus } from "./cartBostaSkus";
+import { getPaymentMethodValidationError } from "./easyOrderOrderPayload";
 
 export function normalizePhoneDigits(value) {
   return String(value ?? "").replace(/\D/g, "");
@@ -48,6 +49,11 @@ export function validateCreateOrderForm(form, cartItems) {
 
   if (!String(form?.districtId ?? "").trim()) {
     errors.push("المنطقة مطلوبة");
+  }
+
+  const paymentMethodError = getPaymentMethodValidationError(form?.payment_method);
+  if (paymentMethodError) {
+    errors.push(paymentMethodError);
   }
 
   return {

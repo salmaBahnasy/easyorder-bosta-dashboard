@@ -9,6 +9,7 @@ import FeedbackModal from "../../components/FeedbackModal";
 import { useProductCatalog } from "../../hooks/useProductCatalog";
 import { appHref } from "../../utils/auth";
 import {
+  appendBostaLocationIdsToPayload,
   bostaCityLabel,
   getOrderGovernmentName,
   parseDistrictHintFromAddress,
@@ -16,6 +17,13 @@ import {
   pickOrderBostaDistrictId,
   resolveBostaLocationForSend,
 } from "../../utils/bostaLocation";
+import {
+  normalizeEasyOrderPaymentMethod,
+  PAYMENT_METHOD_OPTIONS,
+  paymentMethodOptionLabel,
+  getPaymentMethodValidationError,
+  resolveEasyOrderPaymentMethod,
+} from "../../utils/easyOrderOrderPayload";
 import {
   createEmptyCartRow,
   parseProductRawData,
@@ -183,24 +191,6 @@ const SHIPPING_STATUS_OPTIONS = [
   { value: "failed", label: "فشل" },
 ];
 
-const PAYMENT_METHOD_OPTIONS = [
-  { value: "COD", label: "COD (دفع عند الاستلام)" },
-  { value: "Instapay", label: "إنستاباي" },
-];
-
-function normalizePaymentMethod(value) {
-  const s = String(value ?? "").trim();
-  if (!s) return "COD";
-  const lower = s.toLowerCase();
-  if (lower === "instapay" || lower === "insta pay" || lower.includes("instapay")) {
-    return "Instapay";
-  }
-  if (lower === "cod" || lower === "cash on delivery") return "COD";
-  const match = PAYMENT_METHOD_OPTIONS.find((o) => o.value.toLowerCase() === lower);
-  if (match) return match.value;
-  return "COD";
-}
-
 function normalizeOrderType(value) {
   const s = String(value ?? "new").trim().toLowerCase();
   if (s === "replacement" || s === "return" || s === "new") return s;
@@ -248,7 +238,7 @@ export default function OrderPayloadDetailsPage() {
     mobile2: "",
     type: "FORWARD",
     shipping_cost: "",
-    payment_method: "COD",
+    payment_method: "cod",
     order_type: "new",
     order_source: "store",
     shipping_status: "in_progress",
@@ -313,11 +303,11 @@ export default function OrderPayloadDetailsPage() {
           order.totals?.shippingCost ??
           "",
       ),
-      payment_method: normalizePaymentMethod(
+      payment_method: normalizeEasyOrderPaymentMethod(
         order.payment_method ??
           order["Payment Method"] ??
           order.totals?.paymentMethod ??
-          (orderPayment(order) !== "—" ? orderPayment(order) : "COD"),
+          (orderPayment(order) !== "—" ? orderPayment(order) : "cod"),
       ),
       order_type: normalizeOrderType(order.order_type ?? order.orderType),
       order_source: normalizeOrderSource(order.order_source ?? order.orderSource),
@@ -780,6 +770,18 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
+    const paymentMethodError = getPaymentMethodValidationError(form.payment_method);
+    if (paymentMethodError) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: paymentMethodError,
+      });
+      return;
+    }
+
+    const paymentMethod = resolveEasyOrderPaymentMethod(form.payment_method);
+
     const initialStatus =
       order?.orderStatus ??
       order?.order_status ??
@@ -828,23 +830,17 @@ export default function OrderPayloadDetailsPage() {
       status: backendStatus,
       cart_items: cartPayload,
       shipping_cost: parseNonNegativeMoney(form.shipping_cost),
-      payment_method: form.payment_method,
+      payment_method: paymentMethod,
       order_source: form.order_source,
       order_type: form.order_type,
       note: String(form.note ?? "").trim(),
       ...(showShipFields ? { shipping_status: form.shipping_status } : {}),
     };
-    if (String(form.cityId ?? "").trim()) {
-      payload.city_id = form.cityId;
-      payload.cityId = form.cityId;
-      payload.bosta_city_id = form.cityId;
-      payload.bostaCityId = form.cityId;
-    }
-    if (String(form.districtId ?? "").trim()) {
-      payload.district_id = form.districtId;
-      payload.districtId = form.districtId;
-      payload.bosta_district_id = form.districtId;
-      payload.bostaDistrictId = form.districtId;
+    if (String(form.cityId ?? "").trim() || String(form.districtId ?? "").trim()) {
+      appendBostaLocationIdsToPayload(payload, {
+        cityId: form.cityId,
+        districtId: form.districtId,
+      });
     }
 
     try {
@@ -1169,6 +1165,7 @@ export default function OrderPayloadDetailsPage() {
                  className="order-details-page__input"
                  value={form.payment_method}
                  onChange={(e) => setField("payment_method", e.target.value)}
+                 required
                >
                  {PAYMENT_METHOD_OPTIONS.map((o) => (
                    <option key={o.value} value={o.value}>
@@ -1327,7 +1324,7 @@ export default function OrderPayloadDetailsPage() {
             </div>
             <div className="order-details-page__summary-row">
               <span>طريقة الدفع</span>
-              <strong>{form.payment_method || "—"}</strong>
+              <strong>{paymentMethodOptionLabel(form.payment_method)}</strong>
             </div>
            
             <div className="order-details-page__summary-row">

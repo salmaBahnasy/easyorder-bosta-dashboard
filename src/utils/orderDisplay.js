@@ -1,17 +1,25 @@
 export function orderRowKey(order, index = 0) {
-  const k =
-    order["Order ID"] ?? order.id ?? order.shortId ?? order.short_id;
+  const k = order["Order ID"] ?? order.id ?? order.shortId ?? order.short_id;
   if (k != null && k !== "") return String(k);
   return `row-${index}`;
 }
 
 function toDisplayText(value, fallback = "—") {
   if (value == null || value === "") return fallback;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
   }
   if (Array.isArray(value)) {
-    return value.map((item) => toDisplayText(item, "")).filter(Boolean).join("، ") || fallback;
+    return (
+      value
+        .map((item) => toDisplayText(item, ""))
+        .filter(Boolean)
+        .join("، ") || fallback
+    );
   }
   if (typeof value === "object") {
     const preferred =
@@ -87,7 +95,10 @@ function collectItemVariantSources(item) {
 
 function formatVariationPropsField(variationProps) {
   if (variationProps == null || variationProps === "") return null;
-  if (typeof variationProps === "string" || typeof variationProps === "number") {
+  if (
+    typeof variationProps === "string" ||
+    typeof variationProps === "number"
+  ) {
     return extractVariationPropOnly(variationProps);
   }
   if (Array.isArray(variationProps)) {
@@ -119,11 +130,7 @@ export function formatOrderItemVariationProp(item) {
 
 /** معرّف للعرض في الجدول */
 export function orderDisplayId(order) {
-  const v =
-    order["Order ID"] ??
-    order.shortId ??
-    order.short_id ??
-    order.id;
+  const v = order["Order ID"] ?? order.shortId ?? order.short_id ?? order.id;
   return v != null && v !== "" ? v : "—";
 }
 
@@ -240,7 +247,9 @@ export function orderCartProductLines(order) {
       {
         name: toDisplayText(order["Product Name"]),
         quantity:
-          qty != null && qty !== "" && !Number.isNaN(Number(qty)) ? Number(qty) : null,
+          qty != null && qty !== "" && !Number.isNaN(Number(qty))
+            ? Number(qty)
+            : null,
       },
     ];
   }
@@ -292,7 +301,7 @@ export function orderQuantity(order) {
   if (Array.isArray(lineItems) && lineItems.length > 0) {
     const sum = lineItems.reduce(
       (acc, i) => acc + (Number(i.quantity) || 0),
-      0
+      0,
     );
     return sum || lineItems.length;
   }
@@ -300,7 +309,7 @@ export function orderQuantity(order) {
   if (Array.isArray(items) && items.length > 0) {
     const sum = items.reduce(
       (acc, i) => acc + (Number(i.quantity ?? i.qty) || 0),
-      0
+      0,
     );
     return sum || items.length;
   }
@@ -371,9 +380,7 @@ export function orderTypeDisplayLabel(value) {
 /** حالة الشحن من الطلب (للعرض مع «تم الشحن»). */
 export function orderShippingStatus(order) {
   let v =
-    order.shipping_status ??
-    order.shippingStatus ??
-    order["Shipping Status"];
+    order.shipping_status ?? order.shippingStatus ?? order["Shipping Status"];
   if (v != null && String(v).trim() !== "") return String(v).trim();
 
   let rd = order?.raw_data;
@@ -399,10 +406,7 @@ export function orderDetailRouteId(order) {
 /** نص ملاحظة الطلب إن وُجدت. */
 export function orderNote(order) {
   const raw =
-    order?.note ??
-    order?.notes ??
-    order?.delivery_note ??
-    order?.deliveryNote;
+    order?.note ?? order?.notes ?? order?.delivery_note ?? order?.deliveryNote;
   return String(raw ?? "").trim();
 }
 

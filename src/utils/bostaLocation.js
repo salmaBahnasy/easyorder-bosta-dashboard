@@ -191,3 +191,27 @@ export function resolveBostaLocationForSend(form, order) {
     String(form?.districtId ?? "").trim() || pickOrderBostaDistrictId(order);
   return { cityId, districtId };
 }
+
+/** Same city/district id fields as order update (Bosta + backend aliases). */
+export function appendBostaLocationIdsToPayload(payload, { cityId, districtId } = {}) {
+  if (!payload || typeof payload !== "object") return payload;
+
+  const cid = String(cityId ?? "").trim();
+  const did = String(districtId ?? "").trim();
+
+  if (cid) {
+    payload.city_id = cid;
+    payload.cityId = cid;
+    payload.bosta_city_id = cid;
+    payload.bostaCityId = cid;
+  }
+
+  if (did) {
+    payload.district_id = did;
+    payload.districtId = did;
+    payload.bosta_district_id = did;
+    payload.bostaDistrictId = did;
+  }
+
+  return payload;
+}

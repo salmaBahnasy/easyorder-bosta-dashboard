@@ -5,9 +5,42 @@
 export function normalizeEasyOrderPaymentMethod(value) {
   const raw = String(value ?? "cod").trim();
   if (!raw) return "cod";
-  if (raw.toLowerCase() === "cod") return "cod";
-  if (raw.toLowerCase() === "instapay") return "instapay";
-  return raw.toLowerCase();
+  const lower = raw.toLowerCase();
+  if (lower === "cod" || lower === "cash on delivery") return "cod";
+  if (lower === "instapay" || lower === "insta pay" || lower.includes("instapay")) {
+    return "instapay";
+  }
+  return lower;
+}
+
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: "cod", label: "COD (دفع عند الاستلام)" },
+  { value: "instapay", label: "إنستاباي" },
+];
+
+export function paymentMethodOptionLabel(value) {
+  const normalized = normalizeEasyOrderPaymentMethod(value);
+  return (
+    PAYMENT_METHOD_OPTIONS.find((option) => option.value === normalized)?.label ??
+    normalized
+  );
+}
+
+export function resolveEasyOrderPaymentMethod(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = normalizeEasyOrderPaymentMethod(raw);
+  return PAYMENT_METHOD_OPTIONS.some((option) => option.value === normalized)
+    ? normalized
+    : null;
+}
+
+export function getPaymentMethodValidationError(value) {
+  if (!String(value ?? "").trim()) return "طريقة الدفع مطلوبة";
+  if (!resolveEasyOrderPaymentMethod(value)) {
+    return "اختر طريقة دفع صحيحة (cod أو instapay)";
+  }
+  return null;
 }
 
 export function mapEasyOrderStatusFields(backendStatus) {
@@ -18,6 +51,7 @@ export function mapEasyOrderStatusFields(backendStatus) {
 
 import { buildCartItemVariantObject } from "./cartProductVariants";
 import { appendBostaSkuFieldsToCartLine } from "./cartBostaSkus";
+import { appendBostaLocationIdsToPayload } from "./bostaLocation";
 
 export function buildEasyOrderCartItems(linesForPayload) {
   return (linesForPayload ?? []).map((row) => {
@@ -67,6 +101,8 @@ export function buildEasyOrderCreatePayload({
   phone2,
   address,
   government,
+  cityId,
+  districtId,
   orderSource,
   orderType,
   backendStatus,
@@ -81,7 +117,10 @@ export function buildEasyOrderCreatePayload({
 }) {
   const { orderStatus, order_status, status } =
     mapEasyOrderStatusFields(backendStatus);
-  const payment_method = normalizeEasyOrderPaymentMethod(paymentMethod);
+  const payment_method = resolveEasyOrderPaymentMethod(paymentMethod);
+  if (!payment_method) {
+    throw new Error("payment_method is required");
+  }
   const shipping_cost = Number(shippingCost) || 0;
   const cost = Number(itemsSubtotal) || 0;
   const total_cost = Number(totalCost) || cost + shipping_cost;
@@ -118,6 +157,8 @@ export function buildEasyOrderCreatePayload({
     payload.shipping_status = shippingStatus;
     payload.shippingStatus = shippingStatus;
   }
+
+  appendBostaLocationIdsToPayload(payload, { cityId, districtId });
 
   return payload;
 }
