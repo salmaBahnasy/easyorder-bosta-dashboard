@@ -55,18 +55,28 @@ export async function fetchProductVariantOptions(productId) {
   return parseProductVariantsResponse(response);
 }
 
-export function applyVariantSelection(options, variantId) {
+export function applyVariantSelection(
+  options,
+  variantId,
+  { preservePrice = false, linePrice } = {},
+) {
   const id = String(variantId ?? "").trim();
   const hit = (options ?? []).find((o) => o.id === id);
   if (!hit) return {};
+
+  const keptPrice = Number(linePrice ?? 0) || 0;
+  const variantData =
+    preservePrice && keptPrice > 0 && hit.variantData
+      ? { ...hit.variantData, price: keptPrice, sale_price: keptPrice }
+      : hit.variantData;
 
   return {
     selectedVariantId: hit.id,
     productVariantId: hit.id,
     variationProp: hit.label,
     variationProps: hit.variationProps,
-    selectedVariantData: hit.variantData,
-    price: hit.price > 0 ? hit.price : "",
+    selectedVariantData: variantData,
+    ...(preservePrice ? {} : { price: hit.price > 0 ? hit.price : "" }),
   };
 }
 
@@ -104,13 +114,17 @@ export async function enrichCartRowWithVariants(row, { preselectedVariantId } = 
     const preferredId =
       String(preselectedVariantId ?? row?.selectedVariantId ?? row?.productVariantId ?? "").trim() ||
       findVariantIdByVariationProp(options, row?.variationProp);
+    const preservePrice = Number(row?.price) > 0;
 
     if (preferredId) {
       return {
         ...row,
         variantOptions: options,
         variationLabel,
-        ...applyVariantSelection(options, preferredId),
+        ...applyVariantSelection(options, preferredId, {
+          preservePrice,
+          linePrice: row.price,
+        }),
         variantsLoading: false,
       };
     }
@@ -120,7 +134,10 @@ export async function enrichCartRowWithVariants(row, { preselectedVariantId } = 
         ...row,
         variantOptions: options,
         variationLabel,
-        ...applyVariantSelection(options, options[0].id),
+        ...applyVariantSelection(options, options[0].id, {
+          preservePrice,
+          linePrice: row.price,
+        }),
         variantsLoading: false,
       };
     }

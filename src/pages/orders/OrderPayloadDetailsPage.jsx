@@ -462,7 +462,10 @@ export default function OrderPayloadDetailsPage() {
       });
       return;
     }
-    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId));
+    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId, {
+      preservePrice: Number(row?.price) > 0,
+      linePrice: row.price,
+    }));
   }
 
   function handleBack() {
