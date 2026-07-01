@@ -238,34 +238,48 @@ export function validateCartRowsBostaSkus(cartItems) {
   return errors;
 }
 
-/** SKU to pass to send-to-bosta when the order has product line(s). */
-export function resolveBostaSkuForSend(cartItems) {
+/** Build lineSkus payload for send-to-bosta (one sku per cart line). */
+export function resolveBostaLineSkusForSend(cartItems) {
   const rows = (cartItems ?? []).filter(
     (row) =>
       String(row?.name ?? "").trim() !== "" || String(row?.sku ?? "").trim() !== "",
   );
-  const codes = rows
-    .map((row) => String(row?.selectedBostaSkuCode ?? "").trim())
-    .filter(Boolean);
-  const needsSelection = rows.some(
-    (row) =>
-      Array.isArray(row?.bostaSkuOptions) && row.bostaSkuOptions.length > 0,
-  );
+  const errors = [];
+  const lineSkus = [];
 
-  if (needsSelection && codes.length === 0) {
-    return { bostaSku: "", error: "اختاري SKU بوسطة قبل الإرسال إلى بوسطة" };
+  rows.forEach((row, lineIndex) => {
+    const needsSelection =
+      Array.isArray(row?.bostaSkuOptions) && row.bostaSkuOptions.length > 0;
+    const skuCode = String(row?.selectedBostaSkuCode ?? "").trim();
+
+    if (needsSelection && !skuCode) {
+      errors.push(`اختاري SKU بوسطة للمنتج: ${row.name || row.sku || "—"}`);
+      return;
+    }
+
+    if (skuCode) {
+      lineSkus.push({ lineIndex, skuCode });
+    }
+  });
+
+  if (errors.length > 0) {
+    return { lineSkus: [], error: errors.join("\n") };
   }
 
-  if (codes.length === 0) return { bostaSku: "" };
+  return { lineSkus };
+}
 
-  const unique = [...new Set(codes)];
-  if (unique.length > 1) {
+/** @deprecated Use resolveBostaLineSkusForSend */
+export function resolveBostaSkuForSend(cartItems) {
+  const { lineSkus, error } = resolveBostaLineSkusForSend(cartItems);
+  if (error) return { bostaSku: "", error };
+  if (lineSkus.length === 0) return { bostaSku: "" };
+  if (lineSkus.length > 1) {
     return {
       bostaSku: "",
       error:
         "الطلب يحتوي أكثر من SKU بوسطة مختلف — اختاري SKU واحد أو احفظي طلباً بمنتج واحد",
     };
   }
-
-  return { bostaSku: unique[0] };
+  return { bostaSku: lineSkus[0].skuCode };
 }

@@ -8,6 +8,7 @@ import {
   isTokenValid,
   isUnauthorizedApiError,
 } from "../utils/auth";
+import { logApiError, logApiRequest, logApiResponse } from "../utils/apiLogger";
 
 const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://127.0.0.1:5050";
 
@@ -28,17 +29,11 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    const fullUrl = `${config.baseURL ?? ""}${config.url ?? ""}`;
-    console.log("[ordersApi] REQUEST", {
-      method: (config.method ?? "get").toUpperCase(),
-      url: fullUrl,
-      params: config.params,
-      data: config.data,
-    });
+    logApiRequest("ordersApi", config);
     return config;
   },
   (error) => {
-    console.log("[ordersApi] REQUEST ERROR", error);
+    logApiError("ordersApi", error);
     return Promise.reject(error);
   },
 );
@@ -67,21 +62,11 @@ function authorizedRequestConfig() {
 
 apiClient.interceptors.response.use(
   (response) => {
-    console.log("[ordersApi] RESPONSE", {
-      status: response.status,
-      url: response.config?.url,
-      data: response.data,
-    });
+    logApiResponse("ordersApi", response);
     return response;
   },
   (error) => {
-    const res = error.response;
-    console.log("[ordersApi] RESPONSE ERROR", {
-      message: error.message,
-      status: res?.status,
-      url: res?.config?.url,
-      data: res?.data,
-    });
+    logApiError("ordersApi", error);
     if (isUnauthorizedApiError(error)) {
       handleSessionExpired();
     }
@@ -442,16 +427,40 @@ export async function updateOrder(orderId, payload) {
 /** إرسال الطلب إلى بوسطة — `POST /api/{system}/orders/:orderId/send-to-bosta` */
 export async function sendOrderToBosta(
   orderId,
-  { cityId, districtId, note, allowToOpenPackage, bostaSku } = {},
+  {
+    cityId,
+    districtId,
+    firstLine,
+    mobile,
+    payment_method,
+    note,
+    allowToOpenPackage,
+    lineSkus,
+  } = {},
 ) {
   const body = {
     cityId: String(cityId ?? "").trim(),
     districtId: String(districtId ?? "").trim(),
-    note: String(note ?? "").trim(),
+    firstLine: String(firstLine ?? "").trim(),
+    mobile: String(mobile ?? "").trim(),
+    payment_method: String(payment_method ?? "").trim(),
     allowToOpenPackage: Boolean(allowToOpenPackage),
   };
-  const sku = String(bostaSku ?? "").trim();
-  if (sku) body.bosta_sku = sku;
+
+  const trimmedNote = String(note ?? "").trim();
+  if (trimmedNote) body.note = trimmedNote;
+
+  if (Array.isArray(lineSkus) && lineSkus.length > 0) {
+    body.lineSkus = lineSkus
+      .map((entry, index) => ({
+        lineIndex: Number.isFinite(Number(entry?.lineIndex))
+          ? Number(entry.lineIndex)
+          : index,
+        skuCode: String(entry?.skuCode ?? entry?.sku ?? "").trim(),
+      }))
+      .filter((entry) => entry.skuCode);
+  }
+
   const response = await apiClient.post(
     dashboardApiPath(`orders/${orderId}/send-to-bosta`),
     body,

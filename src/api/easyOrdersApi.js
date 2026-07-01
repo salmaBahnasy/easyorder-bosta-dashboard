@@ -1,4 +1,5 @@
 import axios from "axios";
+import { logApiError, logApiRequest, logApiResponse } from "../utils/apiLogger";
 
 const EASY_ORDERS_BASE_URL = "https://api.easy-orders.net";
 
@@ -12,25 +13,19 @@ easyOrdersClient.interceptors.request.use(
     if (key) {
       config.headers["Api-Key"] = key;
     }
-    const fullUrl = `${config.baseURL ?? ""}${config.url ?? ""}`;
-    console.log("[easyOrdersApi] REQUEST", {
-      method: (config.method ?? "get").toUpperCase(),
-      url: fullUrl,
-      params: config.params,
-    });
+    logApiRequest("easyOrdersApi", config);
     return config;
   },
   (error) => Promise.reject(error),
 );
 
 easyOrdersClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    logApiResponse("easyOrdersApi", response);
+    return response;
+  },
   (error) => {
-    console.log("[easyOrdersApi] RESPONSE ERROR", {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-    });
+    logApiError("easyOrdersApi", error);
     return Promise.reject(error);
   },
 );

@@ -55,7 +55,7 @@ import {
   enrichCartRowWithBostaSkus,
   finalizeCartLine,
   loadBostaSkusForCatalogProduct,
-  resolveBostaSkuForSend,
+  resolveBostaLineSkusForSend,
   validateCartRowsBostaSkus,
 } from "../../utils/cartBostaSkus";
 import "./OrderPayloadDetailsPage.css";
@@ -701,12 +701,12 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
-    const bostaSkuResult = resolveBostaSkuForSend(cartItems);
-    if (bostaSkuResult.error) {
+    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
+    if (lineSkusResult.error) {
       setFeedbackModal({
         open: true,
         variant: "error",
-        message: bostaSkuResult.error,
+        message: lineSkusResult.error,
       });
       return;
     }
@@ -716,9 +716,12 @@ export default function OrderPayloadDetailsPage() {
       await sendOrderToBosta(orderIdForStatusUpdate, {
         cityId,
         districtId,
+        firstLine: form.firstLine,
+        mobile: form.mobile,
+        payment_method: resolveEasyOrderPaymentMethod(form.payment_method),
         note: form.note,
         allowToOpenPackage: form.allowToOpenPackage,
-        bostaSku: bostaSkuResult.bostaSku,
+        lineSkus: lineSkusResult.lineSkus,
       });
       setIsConfirmModalOpen(false);
       setFeedbackModal({
