@@ -253,6 +253,7 @@ export default function OrderPayloadDetailsPage() {
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [sendingToBosta, setSendingToBosta] = useState(false);
+  const [bostaSendPhase, setBostaSendPhase] = useState(null);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
 
   useEffect(() => {
@@ -682,69 +683,9 @@ export default function OrderPayloadDetailsPage() {
     setIsConfirmModalOpen(true);
   }
 
-  async function handleSendToBosta() {
+  async function persistOrderChanges({ showSuccessFeedback = true } = {}) {
     if (!orderIdForStatusUpdate) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة",
-      });
-      return;
-    }
-    const { cityId, districtId } = resolveBostaLocationForSend(form, order);
-    if (!cityId || !districtId) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "المحافظة والمنطقة مطلوبتان للإرسال إلى بوسطة",
-      });
-      return;
-    }
-
-    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
-    if (lineSkusResult.error) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: lineSkusResult.error,
-      });
-      return;
-    }
-
-    try {
-      setSendingToBosta(true);
-      await sendOrderToBosta(orderIdForStatusUpdate, {
-        cityId,
-        districtId,
-        firstLine: form.firstLine,
-        mobile: form.mobile,
-        payment_method: resolveEasyOrderPaymentMethod(form.payment_method),
-        note: form.note,
-        allowToOpenPackage: form.allowToOpenPackage,
-        lineSkus: lineSkusResult.lineSkus,
-      });
-      setIsConfirmModalOpen(false);
-      setFeedbackModal({
-        open: true,
-        variant: "success",
-        message: "تم إرسال الطلب إلى بوسطة بنجاح",
-      });
-    } catch (error) {
-      console.error("[send-to-bosta]", error?.response?.data ?? error);
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: formatApiErrorMessage(error, "تعذر إرسال الطلب إلى بوسطة"),
-      });
-    } finally {
-      setSendingToBosta(false);
-    }
-  }
-
-  async function handleSaveOrderChanges() {
-    if (!orderIdForStatusUpdate) {
-      alert("لا يوجد رقم طلب صالح لتعديل البيانات");
-      return;
+      return { ok: false, message: "لا يوجد رقم طلب صالح لتعديل البيانات" };
     }
 
     const linesForPayload = cartItems.filter(
@@ -752,38 +693,22 @@ export default function OrderPayloadDetailsPage() {
         String(row.name ?? "").trim() !== "" || String(row.sku ?? "").trim() !== "",
     );
     if (linesForPayload.length === 0) {
-      alert("أضيفي صفاً واختاري منتجاً من القائمة");
-      return;
+      return { ok: false, message: "أضيفي صفاً واختاري منتجاً من القائمة" };
     }
 
     const variantErrors = validateCartRowsVariants(linesForPayload);
     if (variantErrors.length > 0) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: variantErrors.join("\n"),
-      });
-      return;
+      return { ok: false, message: variantErrors.join("\n") };
     }
 
     const bostaErrors = validateCartRowsBostaSkus(linesForPayload);
     if (bostaErrors.length > 0) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: bostaErrors.join("\n"),
-      });
-      return;
+      return { ok: false, message: bostaErrors.join("\n") };
     }
 
     const paymentMethodError = getPaymentMethodValidationError(form.payment_method);
     if (paymentMethodError) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: paymentMethodError,
-      });
-      return;
+      return { ok: false, message: paymentMethodError };
     }
 
     const paymentMethod = resolveEasyOrderPaymentMethod(form.payment_method);
@@ -850,25 +775,127 @@ export default function OrderPayloadDetailsPage() {
     }
 
     try {
-      setSavingOrder(true);
       await updateOrder(orderIdForStatusUpdate, payload);
-      setFeedbackModal({
-        open: true,
-        variant: "success",
-        message: "تم حفظ تعديلات الطلب بنجاح",
-      });
+      if (showSuccessFeedback) {
+        setFeedbackModal({
+          open: true,
+          variant: "success",
+          message: "تم حفظ تعديلات الطلب بنجاح",
+        });
+      }
+      return { ok: true };
     } catch (error) {
       console.log(error);
       const message = error?.response?.data?.message ?? "تعذر حفظ التعديلات";
+      if (showSuccessFeedback) {
+        setFeedbackModal({
+          open: true,
+          variant: "error",
+          message,
+        });
+      }
+      return { ok: false, message };
+    }
+  }
+
+  async function handleSendToBosta() {
+    if (!orderIdForStatusUpdate) {
       setFeedbackModal({
         open: true,
         variant: "error",
-        message,
+        message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة",
       });
+      return;
+    }
+    const { cityId, districtId } = resolveBostaLocationForSend(form, order);
+    if (!cityId || !districtId) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "المحافظة والمنطقة مطلوبتان للإرسال إلى بوسطة",
+      });
+      return;
+    }
+
+    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
+    if (lineSkusResult.error) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: lineSkusResult.error,
+      });
+      return;
+    }
+
+    try {
+      setSendingToBosta(true);
+      setBostaSendPhase("saving");
+
+      const saved = await persistOrderChanges({ showSuccessFeedback: false });
+      if (!saved.ok) {
+        setFeedbackModal({
+          open: true,
+          variant: "error",
+          message: saved.message ?? "تعذر حفظ الطلب قبل الإرسال إلى بوسطة",
+        });
+        return;
+      }
+
+      setBostaSendPhase("sending");
+      await sendOrderToBosta(orderIdForStatusUpdate, {
+        cityId,
+        districtId,
+        firstLine: form.firstLine,
+        mobile: form.mobile,
+        payment_method: resolveEasyOrderPaymentMethod(form.payment_method),
+        note: form.note,
+        allowToOpenPackage: form.allowToOpenPackage,
+        lineSkus: lineSkusResult.lineSkus,
+      });
+      setIsConfirmModalOpen(false);
+      setFeedbackModal({
+        open: true,
+        variant: "success",
+        message: "تم حفظ الطلب وإرساله إلى بوسطة بنجاح",
+      });
+    } catch (error) {
+      console.error("[send-to-bosta]", error?.response?.data ?? error);
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: formatApiErrorMessage(error, "تعذر إرسال الطلب إلى بوسطة"),
+      });
+    } finally {
+      setSendingToBosta(false);
+      setBostaSendPhase(null);
+    }
+  }
+
+  async function handleSaveOrderChanges() {
+    if (!orderIdForStatusUpdate) {
+      alert("لا يوجد رقم طلب صالح لتعديل البيانات");
+      return;
+    }
+
+    try {
+      setSavingOrder(true);
+      await persistOrderChanges({ showSuccessFeedback: true });
     } finally {
       setSavingOrder(false);
     }
   }
+
+  const bostaSendButtonLabel = (() => {
+    if (bostaSendPhase === "saving") return "جاري الحفظ...";
+    if (bostaSendPhase === "sending") return "جاري الإرسال...";
+    return "إرسال إلى بوسطة";
+  })();
+
+  const bostaConfirmButtonLabel = (() => {
+    if (bostaSendPhase === "saving") return "جاري الحفظ...";
+    if (bostaSendPhase === "sending") return "جاري الإرسال...";
+    return "تأكيد الإرسال";
+  })();
 
   const initialOrderStatus =
     order?.orderStatus ??
@@ -1017,7 +1044,7 @@ export default function OrderPayloadDetailsPage() {
             disabled={sendingToBosta || savingOrder}
             className="order-details-page__btn order-details-page__btn--soft"
           >
-            {sendingToBosta ? "جاري الإرسال..." : "إرسال إلى بوسطة"}
+            {bostaSendButtonLabel}
           </button>
           <button
             type="button"
@@ -1371,7 +1398,7 @@ export default function OrderPayloadDetailsPage() {
             }}
           >
             <h3 style={{ marginTop: 0 }}>إرسال الطلب</h3>
-            <p>هل تريدين إرسال الطلب إلى بوسطة؟</p>
+            <p>سيتم حفظ التعديلات أولاً ثم إرسال الطلب إلى بوسطة. هل تريدين المتابعة؟</p>
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 type="button"
@@ -1388,7 +1415,7 @@ export default function OrderPayloadDetailsPage() {
                   opacity: sendingToBosta ? 0.7 : 1,
                 }}
               >
-                {sendingToBosta ? "جاري الإرسال..." : "تأكيد الإرسال"}
+                {bostaConfirmButtonLabel}
               </button>
               <button
                 type="button"
