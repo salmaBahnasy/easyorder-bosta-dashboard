@@ -1,7 +1,7 @@
 import { getBostaSkusByProduct } from "../api/ordersApi";
 import { filterCartLinesForPayload } from "../pages/orders/cartCatalogHelpers";
+import { resolveUserEnteredLinePrice } from "./cartLinePrice";
 import { appendVariantFieldsToCartLine, resolveCatalogProductApiId } from "./cartProductVariants";
-import { resolveCartRowSystemPrice } from "./catalogPrice";
 
 function resolveBostaSkuCodeFromRow(row) {
   return String(
@@ -265,8 +265,8 @@ export function validateCartRowsBostaSkus(cartItems) {
   return errors;
 }
 
-/** Build lineSkus payload for send-to-bosta — one Bosta item per cart row (multi-product / multi-qty). */
-export async function resolveBostaLineSkusForSend(cartItems) {
+/** Build lineSkus for send-to-bosta — SKU + user-entered unit price per cart row. */
+export function resolveBostaLineSkusForSend(cartItems) {
   const rows = filterCartLinesForPayload(cartItems);
   const errors = [];
   const lineSkus = [];
@@ -281,6 +281,12 @@ export async function resolveBostaLineSkusForSend(cartItems) {
     const needsSelection =
       Array.isArray(row?.bostaSkuOptions) && row.bostaSkuOptions.length > 1;
     const skuCode = resolveBostaSkuCodeFromRow(row);
+    const price = resolveUserEnteredLinePrice(row);
+
+    if (price == null) {
+      errors.push(`أدخلي سعر الوحدة للمنتج: ${label}`);
+      continue;
+    }
 
     if (needsSelection && !skuCode) {
       errors.push(`اختاري SKU بوسطة للمنتج: ${label}`);
@@ -292,7 +298,6 @@ export async function resolveBostaLineSkusForSend(cartItems) {
       continue;
     }
 
-    const price = await resolveCartRowSystemPrice(row);
     lineSkus.push({
       lineIndex,
       skuCode,
@@ -316,8 +321,8 @@ export async function resolveBostaLineSkusForSend(cartItems) {
 }
 
 /** @deprecated Use resolveBostaLineSkusForSend */
-export async function resolveBostaSkuForSend(cartItems) {
-  const { lineSkus, error } = await resolveBostaLineSkusForSend(cartItems);
+export function resolveBostaSkuForSend(cartItems) {
+  const { lineSkus, error } = resolveBostaLineSkusForSend(cartItems);
   if (error) return { bostaSku: "", error };
   if (lineSkus.length === 0) return { bostaSku: "" };
   if (lineSkus.length > 1) {

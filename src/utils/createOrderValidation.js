@@ -1,5 +1,6 @@
 import { validateCartRowsVariants } from "./cartProductVariants";
 import { validateCartRowsBostaSkus } from "./cartBostaSkus";
+import { validateCartRowsPrices } from "./cartLinePrice";
 import { getPaymentMethodValidationError } from "./easyOrderOrderPayload";
 import { filterCartLinesForPayload } from "../pages/orders/cartCatalogHelpers";
 
@@ -19,6 +20,7 @@ export function validateCreateOrderForm(form, cartItems) {
   }
 
   errors.push(...validateCartRowsVariants(cartItems));
+  errors.push(...validateCartRowsPrices(cartItems));
   errors.push(...validateCartRowsBostaSkus(cartItems));
 
   const phoneDigits = normalizePhoneDigits(form?.mobile);
