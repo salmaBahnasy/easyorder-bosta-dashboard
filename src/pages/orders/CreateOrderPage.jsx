@@ -39,8 +39,8 @@ import {
   loadBostaSkusForCatalogProduct,
   resolveBostaLineSkusForSend,
 } from "../../utils/cartBostaSkus";
-import { fetchLiveCatalogPrice, syncCartItemsWithSystemPrices, computeCartLinesSubtotal } from "../../utils/catalogPrice";
 import { formatApiErrorMessage } from "../../utils/apiErrors";
+import { computeCartLinesSubtotal } from "../../utils/catalogPrice";
 import { orderDetailRouteId } from "../../utils/orderDisplay";
 import "./OrderPayloadDetailsPage.css";
 import "./CreateOrderPage.css";
@@ -279,19 +279,10 @@ export default function CreateOrderPage() {
       if (variantResult.variantOptions.length === 1) {
         Object.assign(
           patch,
-          applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id),
+          applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id, {
+            preservePrice: true,
+          }),
         );
-      } else if (variantResult.variantOptions.length === 0) {
-        try {
-          const productId =
-            fields.catalogProductKey ||
-            (fields.catalogProductId != null ? String(fields.catalogProductId) : "");
-          const livePrice = await fetchLiveCatalogPrice(productId);
-          if (livePrice > 0) patch.price = livePrice;
-        } catch (error) {
-          console.log(error);
-          if (fields.price > 0) patch.price = fields.price;
-        }
       }
       if (bostaResult.bostaSkuOptions.length === 1) {
         Object.assign(
@@ -337,7 +328,10 @@ export default function CreateOrderPage() {
       });
       return;
     }
-    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId));
+    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId, {
+      preservePrice: true,
+      linePrice: row.price,
+    }));
   }
 
   function handleBack() {
@@ -430,8 +424,7 @@ export default function CreateOrderPage() {
   }
 
   async function handleCreateOrder() {
-    const syncedCart = await syncCartItemsWithSystemPrices(cartItems);
-    const validation = validateCreateOrderForm(form, syncedCart);
+    const validation = validateCreateOrderForm(form, cartItems);
     if (!validation.valid) {
       showFeedback("error", validation.errors.join("\n"));
       return;
@@ -452,14 +445,13 @@ export default function CreateOrderPage() {
   }
 
   async function handleCreateAndSendToBosta() {
-    const syncedCart = await syncCartItemsWithSystemPrices(cartItems);
-    const validation = validateCreateOrderForm(form, syncedCart);
+    const validation = validateCreateOrderForm(form, cartItems);
     if (!validation.valid) {
       showFeedback("error", validation.errors.join("\n"));
       return;
     }
 
-    const lineSkusResult = await resolveBostaLineSkusForSend(syncedCart);
+    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
     if (lineSkusResult.error) {
       showFeedback("error", lineSkusResult.error);
       return;

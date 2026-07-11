@@ -58,7 +58,8 @@ import {
   resolveBostaLineSkusForSend,
   validateCartRowsBostaSkus,
 } from "../../utils/cartBostaSkus";
-import { fetchLiveCatalogPrice, resolveCartRowSystemPrice, computeCartPayloadSubtotal } from "../../utils/catalogPrice";
+import { computeCartPayloadSubtotal } from "../../utils/catalogPrice";
+import { validateCartRowsPrices } from "../../utils/cartLinePrice";
 import "./OrderPayloadDetailsPage.css";
 
 function cartRowFromOrderItem(item, idx) {
@@ -275,13 +276,12 @@ export default function OrderPayloadDetailsPage() {
         rows.map(async (row) => {
           const withVariants = await enrichCartRowWithVariants(row, {
             preselectedVariantId: row.productVariantId || row.selectedVariantId,
-            preservePrice: false,
+            preservePrice: true,
+            linePrice: row.price,
           });
-          const withBosta = await enrichCartRowWithBostaSkus(withVariants, {
+          return enrichCartRowWithBostaSkus(withVariants, {
             preselectedSkuCode: row.selectedBostaSkuCode,
           });
-          const systemPrice = await resolveCartRowSystemPrice(withBosta);
-          return systemPrice > 0 ? { ...withBosta, price: systemPrice } : withBosta;
         }),
       );
       if (!cancelled) setCartItems(enriched);
@@ -420,19 +420,10 @@ export default function OrderPayloadDetailsPage() {
       if (variantResult.variantOptions.length === 1) {
         Object.assign(
           patch,
-          applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id),
+          applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id, {
+            preservePrice: true,
+          }),
         );
-      } else if (variantResult.variantOptions.length === 0) {
-        try {
-          const productId =
-            fields.catalogProductKey ||
-            (fields.catalogProductId != null ? String(fields.catalogProductId) : "");
-          const livePrice = await fetchLiveCatalogPrice(productId);
-          if (livePrice > 0) patch.price = livePrice;
-        } catch (error) {
-          console.log(error);
-          if (fields.price > 0) patch.price = fields.price;
-        }
       }
       if (bostaResult.bostaSkuOptions.length === 1) {
         Object.assign(
@@ -478,7 +469,10 @@ export default function OrderPayloadDetailsPage() {
       });
       return;
     }
-    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId));
+    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId, {
+      preservePrice: true,
+      linePrice: row.price,
+    }));
   }
 
   function handleBack() {
@@ -710,7 +704,7 @@ export default function OrderPayloadDetailsPage() {
     await handleSendToBosta(check);
   }
 
-  async function buildOrderPersistSnapshot() {
+  function buildOrderPersistSnapshot() {
     if (!orderIdForStatusUpdate) {
       return { ok: false, message: "لا يوجد رقم طلب صالح لتعديل البيانات" };
     }
@@ -733,6 +727,11 @@ export default function OrderPayloadDetailsPage() {
       return { ok: false, message: bostaErrors.join("\n") };
     }
 
+    const priceErrors = validateCartRowsPrices(linesForPayload);
+    if (priceErrors.length > 0) {
+      return { ok: false, message: priceErrors.join("\n") };
+    }
+
     const paymentMethodError = getPaymentMethodValidationError(form.payment_method);
     if (paymentMethodError) {
       return { ok: false, message: paymentMethodError };
@@ -749,8 +748,7 @@ export default function OrderPayloadDetailsPage() {
     const uiStatusForSave = selectedStatus || mapBackendStatusToUi(initialStatus) || "جديد";
     const backendStatus = backendStatusMap[uiStatusForSave] ?? "new";
     const showShipFields = uiStatusForSave === "تم الشحن";
-    const cartPayload = await Promise.all(
-      linesForPayload.map(async (row) => {
+    const cartPayload = linesForPayload.map((row) => {
       let productId =
         row.catalogProductId != null
           ? String(row.catalogProductId)
@@ -767,10 +765,9 @@ export default function OrderPayloadDetailsPage() {
         }
       }
 
-      const systemPrice = await resolveCartRowSystemPrice(row);
       const line = {
         quantity: Number(row.quantity) || 1,
-        price: systemPrice > 0 ? systemPrice : Number(row.price) || 0,
+        price: Number(row.price) || 0,
         in_cart: false,
         product: {
           name: row.name,
@@ -780,8 +777,7 @@ export default function OrderPayloadDetailsPage() {
         ...(productId ? { product_id: productId } : {}),
       };
       return finalizeCartLine(line, row, productId);
-    }),
-    );
+    });
     const shippingCost = parseNonNegativeMoney(form.shipping_cost);
     const cost = computeCartPayloadSubtotal(cartPayload);
     const total_cost = cost + shippingCost;
@@ -812,7 +808,7 @@ export default function OrderPayloadDetailsPage() {
       });
     }
 
-    const lineSkusResult = await resolveBostaLineSkusForSend(cartItems);
+    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
     if (lineSkusResult.error) {
       return { ok: false, message: lineSkusResult.error };
     }
@@ -829,7 +825,7 @@ export default function OrderPayloadDetailsPage() {
   }
 
   async function persistOrderChanges({ showSuccessFeedback = true } = {}) {
-    const built = await buildOrderPersistSnapshot();
+    const built = buildOrderPersistSnapshot();
     if (!built.ok) {
       if (showSuccessFeedback) {
         setFeedbackModal({
@@ -874,7 +870,7 @@ export default function OrderPayloadDetailsPage() {
       return;
     }
 
-    const built = await buildOrderPersistSnapshot();
+    const built = buildOrderPersistSnapshot();
     if (!built.ok) {
       showSendToBostaError(built.message);
       return;
