@@ -436,6 +436,10 @@ export async function sendOrderToBosta(
     note,
     allowToOpenPackage,
     lineSkus,
+    cart_items,
+    cost,
+    total_cost,
+    shipping_cost,
   } = {},
 ) {
   const body = {
@@ -450,6 +454,25 @@ export async function sendOrderToBosta(
   const trimmedNote = String(note ?? "").trim();
   if (trimmedNote) body.note = trimmedNote;
 
+  if (Array.isArray(cart_items) && cart_items.length > 0) {
+    body.cart_items = cart_items;
+  }
+
+  const shippingCost = Number(shipping_cost);
+  if (Number.isFinite(shippingCost)) {
+    body.shipping_cost = shippingCost;
+  }
+
+  const costValue = Number(cost);
+  if (Number.isFinite(costValue)) {
+    body.cost = costValue;
+  }
+
+  const totalCost = Number(total_cost);
+  if (Number.isFinite(totalCost)) {
+    body.total_cost = totalCost;
+  }
+
   if (Array.isArray(lineSkus) && lineSkus.length > 0) {
     body.lineSkus = lineSkus
       .map((entry, index) => ({
@@ -457,6 +480,8 @@ export async function sendOrderToBosta(
           ? Number(entry.lineIndex)
           : index,
         skuCode: String(entry?.skuCode ?? entry?.sku ?? "").trim(),
+        quantity: Math.max(1, Number(entry?.quantity) || 1),
+        price: Number(entry?.price) || 0,
       }))
       .filter((entry) => entry.skuCode);
   }

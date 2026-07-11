@@ -58,6 +58,7 @@ import {
   resolveBostaLineSkusForSend,
   validateCartRowsBostaSkus,
 } from "../../utils/cartBostaSkus";
+import { fetchLiveCatalogPrice, resolveCartRowSystemPrice, computeCartPayloadSubtotal } from "../../utils/catalogPrice";
 import "./OrderPayloadDetailsPage.css";
 
 function cartRowFromOrderItem(item, idx) {
@@ -274,10 +275,13 @@ export default function OrderPayloadDetailsPage() {
         rows.map(async (row) => {
           const withVariants = await enrichCartRowWithVariants(row, {
             preselectedVariantId: row.productVariantId || row.selectedVariantId,
+            preservePrice: false,
           });
-          return enrichCartRowWithBostaSkus(withVariants, {
+          const withBosta = await enrichCartRowWithBostaSkus(withVariants, {
             preselectedSkuCode: row.selectedBostaSkuCode,
           });
+          const systemPrice = await resolveCartRowSystemPrice(withBosta);
+          return systemPrice > 0 ? { ...withBosta, price: systemPrice } : withBosta;
         }),
       );
       if (!cancelled) setCartItems(enriched);
@@ -418,6 +422,17 @@ export default function OrderPayloadDetailsPage() {
           patch,
           applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id),
         );
+      } else if (variantResult.variantOptions.length === 0) {
+        try {
+          const productId =
+            fields.catalogProductKey ||
+            (fields.catalogProductId != null ? String(fields.catalogProductId) : "");
+          const livePrice = await fetchLiveCatalogPrice(productId);
+          if (livePrice > 0) patch.price = livePrice;
+        } catch (error) {
+          console.log(error);
+          if (fields.price > 0) patch.price = fields.price;
+        }
       }
       if (bostaResult.bostaSkuOptions.length === 1) {
         Object.assign(
@@ -463,10 +478,7 @@ export default function OrderPayloadDetailsPage() {
       });
       return;
     }
-    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId, {
-      preservePrice: Number(row?.price) > 0,
-      linePrice: row.price,
-    }));
+    updateCartRow(rowKey, applyVariantSelection(row.variantOptions, variantId));
   }
 
   function handleBack() {
@@ -654,36 +666,51 @@ export default function OrderPayloadDetailsPage() {
     setIsConfirmModalOpen(false);
   }
 
-  function handleOpenSendToBostaModal() {
+  function validateSendToBostaPrerequisites() {
     if (!orderIdForStatusUpdate) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة",
-      });
-      return;
+      return { ok: false, message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة" };
     }
     const { cityId, districtId } = resolveBostaLocationForSend(form, order);
     if (!cityId) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "اختاري المحافظة قبل الإرسال إلى بوسطة",
-      });
-      return;
+      return { ok: false, message: "اختاري المحافظة قبل الإرسال إلى بوسطة" };
     }
     if (!districtId) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "اختاري المنطقة قبل الإرسال إلى بوسطة",
-      });
+      return { ok: false, message: "اختاري المنطقة قبل الإرسال إلى بوسطة" };
+    }
+    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
+    if (lineSkusResult.error) {
+      return { ok: false, message: lineSkusResult.error };
+    }
+    return { ok: true, cityId, districtId, lineSkus: lineSkusResult.lineSkus };
+  }
+
+  function showSendToBostaError(message) {
+    setFeedbackModal({
+      open: true,
+      variant: "error",
+      message,
+    });
+  }
+
+  function handleOpenSendToBostaModal() {
+    const check = validateSendToBostaPrerequisites();
+    if (!check.ok) {
+      showSendToBostaError(check.message);
       return;
     }
     setIsConfirmModalOpen(true);
   }
 
-  async function persistOrderChanges({ showSuccessFeedback = true } = {}) {
+  async function handleSendToBostaDirect() {
+    const check = validateSendToBostaPrerequisites();
+    if (!check.ok) {
+      showSendToBostaError(check.message);
+      return;
+    }
+    await handleSendToBosta(check);
+  }
+
+  async function buildOrderPersistSnapshot() {
     if (!orderIdForStatusUpdate) {
       return { ok: false, message: "لا يوجد رقم طلب صالح لتعديل البيانات" };
     }
@@ -722,7 +749,8 @@ export default function OrderPayloadDetailsPage() {
     const uiStatusForSave = selectedStatus || mapBackendStatusToUi(initialStatus) || "جديد";
     const backendStatus = backendStatusMap[uiStatusForSave] ?? "new";
     const showShipFields = uiStatusForSave === "تم الشحن";
-    const cartPayload = linesForPayload.map((row) => {
+    const cartPayload = await Promise.all(
+      linesForPayload.map(async (row) => {
       let productId =
         row.catalogProductId != null
           ? String(row.catalogProductId)
@@ -739,9 +767,10 @@ export default function OrderPayloadDetailsPage() {
         }
       }
 
+      const systemPrice = await resolveCartRowSystemPrice(row);
       const line = {
         quantity: Number(row.quantity) || 1,
-        price: Number(row.price) || 0,
+        price: systemPrice > 0 ? systemPrice : Number(row.price) || 0,
         in_cart: false,
         product: {
           name: row.name,
@@ -751,16 +780,25 @@ export default function OrderPayloadDetailsPage() {
         ...(productId ? { product_id: productId } : {}),
       };
       return finalizeCartLine(line, row, productId);
-    });
+    }),
+    );
+    const shippingCost = parseNonNegativeMoney(form.shipping_cost);
+    const cost = computeCartPayloadSubtotal(cartPayload);
+    const total_cost = cost + shippingCost;
+
     const payload = {
       full_name: form.firstName,
       phone: form.mobile,
       phone2: String(form.mobile2 ?? "").trim(),
       cityName: form.cityName,
+      government: String(form.cityName ?? "").trim(),
       address: form.firstLine,
       status: backendStatus,
       cart_items: cartPayload,
-      shipping_cost: parseNonNegativeMoney(form.shipping_cost),
+      shipping_cost: shippingCost,
+      cost,
+      total_cost,
+      expense: shippingCost,
       payment_method: paymentMethod,
       order_source: form.order_source,
       order_type: form.order_type,
@@ -774,8 +812,37 @@ export default function OrderPayloadDetailsPage() {
       });
     }
 
+    const lineSkusResult = await resolveBostaLineSkusForSend(cartItems);
+    if (lineSkusResult.error) {
+      return { ok: false, message: lineSkusResult.error };
+    }
+
+    return {
+      ok: true,
+      payload,
+      cart_items: cartPayload,
+      cost,
+      total_cost,
+      shipping_cost: shippingCost,
+      lineSkus: lineSkusResult.lineSkus,
+    };
+  }
+
+  async function persistOrderChanges({ showSuccessFeedback = true } = {}) {
+    const built = await buildOrderPersistSnapshot();
+    if (!built.ok) {
+      if (showSuccessFeedback) {
+        setFeedbackModal({
+          open: true,
+          variant: "error",
+          message: built.message,
+        });
+      }
+      return { ok: false, message: built.message };
+    }
+
     try {
-      await updateOrder(orderIdForStatusUpdate, payload);
+      await updateOrder(orderIdForStatusUpdate, built.payload);
       if (showSuccessFeedback) {
         setFeedbackModal({
           open: true,
@@ -783,7 +850,7 @@ export default function OrderPayloadDetailsPage() {
           message: "تم حفظ تعديلات الطلب بنجاح",
         });
       }
-      return { ok: true };
+      return { ok: true, snapshot: built };
     } catch (error) {
       console.log(error);
       const message = error?.response?.data?.message ?? "تعذر حفظ التعديلات";
@@ -798,48 +865,38 @@ export default function OrderPayloadDetailsPage() {
     }
   }
 
-  async function handleSendToBosta() {
-    if (!orderIdForStatusUpdate) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "لا يوجد رقم طلب صالح للإرسال إلى بوسطة",
-      });
-      return;
-    }
-    const { cityId, districtId } = resolveBostaLocationForSend(form, order);
-    if (!cityId || !districtId) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "المحافظة والمنطقة مطلوبتان للإرسال إلى بوسطة",
-      });
+  async function handleSendToBosta(prepared) {
+    const check = prepared?.ok
+      ? prepared
+      : validateSendToBostaPrerequisites();
+    if (!check.ok) {
+      showSendToBostaError(check.message);
       return;
     }
 
-    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
-    if (lineSkusResult.error) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: lineSkusResult.error,
-      });
+    const built = await buildOrderPersistSnapshot();
+    if (!built.ok) {
+      showSendToBostaError(built.message);
       return;
     }
+
+    const { cityId, districtId } = check;
+    const {
+      payload,
+      cart_items: cartItemsPayload,
+      cost,
+      total_cost,
+      shipping_cost,
+      lineSkus,
+    } = built;
+    let orderSaved = false;
 
     try {
       setSendingToBosta(true);
       setBostaSendPhase("saving");
 
-      const saved = await persistOrderChanges({ showSuccessFeedback: false });
-      if (!saved.ok) {
-        setFeedbackModal({
-          open: true,
-          variant: "error",
-          message: saved.message ?? "تعذر حفظ الطلب قبل الإرسال إلى بوسطة",
-        });
-        return;
-      }
+      await updateOrder(orderIdForStatusUpdate, payload);
+      orderSaved = true;
 
       setBostaSendPhase("sending");
       await sendOrderToBosta(orderIdForStatusUpdate, {
@@ -850,7 +907,11 @@ export default function OrderPayloadDetailsPage() {
         payment_method: resolveEasyOrderPaymentMethod(form.payment_method),
         note: form.note,
         allowToOpenPackage: form.allowToOpenPackage,
-        lineSkus: lineSkusResult.lineSkus,
+        lineSkus,
+        cart_items: cartItemsPayload,
+        cost,
+        total_cost,
+        shipping_cost,
       });
       setIsConfirmModalOpen(false);
       setFeedbackModal({
@@ -860,10 +921,13 @@ export default function OrderPayloadDetailsPage() {
       });
     } catch (error) {
       console.error("[send-to-bosta]", error?.response?.data ?? error);
+      const fallback = orderSaved
+        ? "تم حفظ الطلب لكن تعذر إرساله إلى بوسطة"
+        : "تعذر إرسال الطلب إلى بوسطة";
       setFeedbackModal({
         open: true,
         variant: "error",
-        message: formatApiErrorMessage(error, "تعذر إرسال الطلب إلى بوسطة"),
+        message: formatApiErrorMessage(error, fallback),
       });
     } finally {
       setSendingToBosta(false);
@@ -1040,7 +1104,7 @@ export default function OrderPayloadDetailsPage() {
           </div>
           <button
             type="button"
-            onClick={handleOpenSendToBostaModal}
+            onClick={handleSendToBostaDirect}
             disabled={sendingToBosta || savingOrder}
             className="order-details-page__btn order-details-page__btn--soft"
           >
@@ -1402,7 +1466,7 @@ export default function OrderPayloadDetailsPage() {
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 type="button"
-                onClick={handleSendToBosta}
+                onClick={() => handleSendToBosta()}
                 disabled={sendingToBosta}
                 style={{
                   background: "#16a085",

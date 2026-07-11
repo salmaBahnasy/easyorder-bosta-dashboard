@@ -4,6 +4,7 @@ import { appHref } from "../../utils/auth";
 import { getProducts } from "../../api/ordersApi";
 import { colors } from "../../constants/colors";
 import { normalizeProductListFromApi } from "../../utils/normalizeProductListFromApi";
+import { resolveEffectiveCatalogPrice } from "../../utils/catalogPrice";
 import "./ProductsPage.css";
 
 /** يقرأ كائن raw_data أو يفكّه لو كان نص JSON (احتياطي) */
@@ -28,12 +29,13 @@ function getProductDisplayFields(item) {
   const rd = getRawDataFields(item);
   const name =
     item?.name ?? item?.title ?? rd.name ?? rd.title ?? "—";
-  const price =
-    item?.price != null && item?.price !== ""
-      ? item.price
-      : rd.price != null && rd.price !== ""
-        ? rd.price
-        : null;
+  const effectivePrice = resolveEffectiveCatalogPrice(item);
+  const listPrice = Number(item?.price ?? rd.price ?? 0) || 0;
+  const price = effectivePrice > 0 ? effectivePrice : null;
+  const originalPrice =
+    listPrice > 0 && effectivePrice > 0 && listPrice > effectivePrice
+      ? listPrice
+      : null;
   const thumbUrl =
     item?.thumb ??
     item?.thumbnail ??
@@ -64,6 +66,7 @@ function getProductDisplayFields(item) {
   return {
     name,
     priceLabel: price != null ? `${price}` : "—",
+    originalPriceLabel: originalPrice != null ? `${originalPrice}` : "",
     thumbUrl,
     quantityLabel: quantity != null ? String(quantity) : "—",
     warrantyLabel,
@@ -178,7 +181,7 @@ export default function ProductsPage() {
           <div className="products-grid">
             {products.map((item, index) => {
               const id = item?.id ?? item?._id ?? item?.sku ?? index;
-              const { name, priceLabel, thumbUrl, warrantyLabel } =
+              const { name, priceLabel, originalPriceLabel, thumbUrl, warrantyLabel } =
                 getProductDisplayFields(item);
               const editId = item?.id ?? item?._id;
               const displayName = String(name ?? "—").trim() || "—";
@@ -208,6 +211,11 @@ export default function ProductsPage() {
                   <div className="product-card__price-bar">
                     <span className="product-card__price">
                       {priceLabel !== "—" ? `${priceLabel} ج` : "—"}
+                      {originalPriceLabel ? (
+                        <span className="product-card__price-original">
+                          {originalPriceLabel} ج
+                        </span>
+                      ) : null}
                     </span>
                     {editId != null ? (
                       <Link

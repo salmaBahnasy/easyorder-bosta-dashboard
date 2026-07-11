@@ -241,6 +241,14 @@
   letter-spacing: 0.02em;
 }
 
+.product-card__price-original {
+  margin-inline-start: 8px;
+  color: #9aa3b8;
+  font-size: 0.85em;
+  text-decoration: line-through;
+  font-weight: 500;
+}
+
 .product-card__edit-link {
   flex-shrink: 0;
   font-size: 13px;

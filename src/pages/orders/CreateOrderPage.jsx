@@ -39,6 +39,7 @@ import {
   loadBostaSkusForCatalogProduct,
   resolveBostaLineSkusForSend,
 } from "../../utils/cartBostaSkus";
+import { fetchLiveCatalogPrice, syncCartItemsWithSystemPrices, computeCartLinesSubtotal } from "../../utils/catalogPrice";
 import { formatApiErrorMessage } from "../../utils/apiErrors";
 import { orderDetailRouteId } from "../../utils/orderDisplay";
 import "./OrderPayloadDetailsPage.css";
@@ -280,6 +281,17 @@ export default function CreateOrderPage() {
           patch,
           applyVariantSelection(variantResult.variantOptions, variantResult.variantOptions[0].id),
         );
+      } else if (variantResult.variantOptions.length === 0) {
+        try {
+          const productId =
+            fields.catalogProductKey ||
+            (fields.catalogProductId != null ? String(fields.catalogProductId) : "");
+          const livePrice = await fetchLiveCatalogPrice(productId);
+          if (livePrice > 0) patch.price = livePrice;
+        } catch (error) {
+          console.log(error);
+          if (fields.price > 0) patch.price = fields.price;
+        }
       }
       if (bostaResult.bostaSkuOptions.length === 1) {
         Object.assign(
@@ -391,7 +403,8 @@ export default function CreateOrderPage() {
     const cartPayload = buildEasyOrderCartItems(linesWithProductIds);
     const nowIso = new Date().toISOString();
     const shippingCost = Number(form.shipping_cost) || 0;
-    const totalCost = Number(form.codAmount) || grandTotalSuggested || 0;
+    const syncedSubtotal = computeCartLinesSubtotal(linesForPayload);
+    const totalCost = Number(form.codAmount) || syncedSubtotal + shippingCost || 0;
 
     return buildEasyOrderCreatePayload({
       id: form.orderAlias?.trim() || `manual-order-${Date.now()}`,
@@ -408,7 +421,7 @@ export default function CreateOrderPage() {
       shippingStatus: shippingStatusForApi,
       paymentMethod: form.payment_method,
       shippingCost,
-      itemsSubtotal,
+      itemsSubtotal: syncedSubtotal,
       totalCost,
       cartItems: cartPayload,
       note: form.note,
@@ -417,7 +430,8 @@ export default function CreateOrderPage() {
   }
 
   async function handleCreateOrder() {
-    const validation = validateCreateOrderForm(form, cartItems);
+    const syncedCart = await syncCartItemsWithSystemPrices(cartItems);
+    const validation = validateCreateOrderForm(form, syncedCart);
     if (!validation.valid) {
       showFeedback("error", validation.errors.join("\n"));
       return;
@@ -438,13 +452,14 @@ export default function CreateOrderPage() {
   }
 
   async function handleCreateAndSendToBosta() {
-    const validation = validateCreateOrderForm(form, cartItems);
+    const syncedCart = await syncCartItemsWithSystemPrices(cartItems);
+    const validation = validateCreateOrderForm(form, syncedCart);
     if (!validation.valid) {
       showFeedback("error", validation.errors.join("\n"));
       return;
     }
 
-    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
+    const lineSkusResult = await resolveBostaLineSkusForSend(syncedCart);
     if (lineSkusResult.error) {
       showFeedback("error", lineSkusResult.error);
       return;
@@ -456,7 +471,8 @@ export default function CreateOrderPage() {
       setSendingToBosta(true);
       setBostaSendPhase("creating");
 
-      const created = await createOrder(buildCreatePayload(validation));
+      const createPayload = buildCreatePayload(validation);
+      const created = await createOrder(createPayload);
       orderCreated = true;
 
       const orderId = resolveCreatedOrderId(created);
@@ -479,6 +495,10 @@ export default function CreateOrderPage() {
         note: form.note,
         allowToOpenPackage: form.allowToOpenPackage,
         lineSkus: lineSkusResult.lineSkus,
+        cart_items: createPayload.cart_items,
+        cost: createPayload.cost,
+        total_cost: createPayload.total_cost,
+        shipping_cost: createPayload.shipping_cost,
       });
 
       showFeedback(

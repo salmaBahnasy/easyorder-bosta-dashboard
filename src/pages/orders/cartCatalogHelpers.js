@@ -1,3 +1,7 @@
+import {
+  resolveEffectiveCatalogPrice,
+} from "../../utils/catalogPrice";
+
 export function parseProductRawData(product) {
   let rd = product?.raw_data;
   if (typeof rd === "string") {
@@ -68,7 +72,7 @@ export function productToCartFields(product) {
       p?.easyorder_id ??
       "",
   );
-  const price = Number(p?.price ?? rd.price ?? 0) || 0;
+  const price = resolveEffectiveCatalogPrice(p);
   const rawId =
     p?.id ?? p?._id ?? p?.easyorder_id ?? rd.product_id ?? rd.id ?? p?.product_id;
   const rawStr = rawId != null && rawId !== "" ? String(rawId).trim() : "";
@@ -78,6 +82,14 @@ export function productToCartFields(product) {
   const catalogProductId = isPureNumericId ? num : null;
   const catalogProductKey = rawStr && !isPureNumericId ? rawStr : "";
   return { sku, name, price, catalogProductId, catalogProductKey };
+}
+
+/** Cart rows that represent real order lines (non-empty product). */
+export function filterCartLinesForPayload(cartItems) {
+  return (cartItems ?? []).filter(
+    (row) =>
+      String(row?.name ?? "").trim() !== "" || String(row?.sku ?? "").trim() !== "",
+  );
 }
 
 export function createEmptyCartRow() {

@@ -1,16 +1,10 @@
 import { validateCartRowsVariants } from "./cartProductVariants";
 import { validateCartRowsBostaSkus } from "./cartBostaSkus";
 import { getPaymentMethodValidationError } from "./easyOrderOrderPayload";
+import { filterCartLinesForPayload } from "../pages/orders/cartCatalogHelpers";
 
 export function normalizePhoneDigits(value) {
   return String(value ?? "").replace(/\D/g, "");
-}
-
-export function filterCartLinesForPayload(cartItems) {
-  return (cartItems ?? []).filter(
-    (row) =>
-      String(row.name ?? "").trim() !== "" || String(row.sku ?? "").trim() !== "",
-  );
 }
 
 /**

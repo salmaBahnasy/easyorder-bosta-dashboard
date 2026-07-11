@@ -1,5 +1,22 @@
 import { getBostaSkusByProduct } from "../api/ordersApi";
+import { filterCartLinesForPayload } from "../pages/orders/cartCatalogHelpers";
 import { appendVariantFieldsToCartLine, resolveCatalogProductApiId } from "./cartProductVariants";
+import { resolveCartRowSystemPrice } from "./catalogPrice";
+
+function resolveBostaSkuCodeFromRow(row) {
+  return String(
+    row?.selectedBostaSkuCode ??
+      row?.selectedBostaSkuData?.skuCode ??
+      row?.bosta_sku ??
+      row?.bostaSku ??
+      "",
+  ).trim();
+}
+
+function cartLineLabel(row, lineIndex) {
+  const name = String(row?.name ?? row?.sku ?? "").trim();
+  return name || `سطر ${lineIndex + 1}`;
+}
 
 function parseBostaSkuOption(entry, context = {}) {
   const skuCode = String(entry?.skuCode ?? entry?.sku ?? "").trim();
@@ -223,55 +240,84 @@ export function finalizeCartLine(line, row, productId) {
 
 export function validateCartRowsBostaSkus(cartItems) {
   const errors = [];
-  for (const row of cartItems ?? []) {
-    const hasProduct =
-      String(row?.name ?? "").trim() !== "" || String(row?.sku ?? "").trim() !== "";
-    if (!hasProduct) continue;
-    if (
-      Array.isArray(row?.bostaSkuOptions) &&
-      row.bostaSkuOptions.length > 0 &&
-      !String(row?.selectedBostaSkuCode ?? "").trim()
-    ) {
-      errors.push(`اختاري SKU بوسطة للمنتج: ${row.name || row.sku || "—"}`);
-    }
-  }
-  return errors;
-}
-
-/** Build lineSkus payload for send-to-bosta (one sku per cart line). */
-export function resolveBostaLineSkusForSend(cartItems) {
-  const rows = (cartItems ?? []).filter(
-    (row) =>
-      String(row?.name ?? "").trim() !== "" || String(row?.sku ?? "").trim() !== "",
-  );
-  const errors = [];
-  const lineSkus = [];
+  const rows = filterCartLinesForPayload(cartItems);
 
   rows.forEach((row, lineIndex) => {
-    const needsSelection =
-      Array.isArray(row?.bostaSkuOptions) && row.bostaSkuOptions.length > 0;
-    const skuCode = String(row?.selectedBostaSkuCode ?? "").trim();
+    const label = cartLineLabel(row, lineIndex);
+    const options = Array.isArray(row?.bostaSkuOptions) ? row.bostaSkuOptions : [];
+    const skuCode = resolveBostaSkuCodeFromRow(row);
 
-    if (needsSelection && !skuCode) {
-      errors.push(`اختاري SKU بوسطة للمنتج: ${row.name || row.sku || "—"}`);
+    if (row?.bostaSkusLoading) {
+      errors.push(`جاري تحميل SKU بوسطة للمنتج: ${label}`);
       return;
     }
 
-    if (skuCode) {
-      lineSkus.push({ lineIndex, skuCode });
+    if (options.length > 1 && !skuCode) {
+      errors.push(`اختاري SKU بوسطة للمنتج: ${label}`);
+      return;
+    }
+
+    if (options.length === 0 && !skuCode) {
+      errors.push(`المنتج غير مربوط ببوسطة: ${label}`);
     }
   });
 
+  return errors;
+}
+
+/** Build lineSkus payload for send-to-bosta — one Bosta item per cart row (multi-product / multi-qty). */
+export async function resolveBostaLineSkusForSend(cartItems) {
+  const rows = filterCartLinesForPayload(cartItems);
+  const errors = [];
+  const lineSkus = [];
+
+  if (rows.length === 0) {
+    return { lineSkus: [], error: "يجب إضافة منتج واحد على الأقل" };
+  }
+
+  for (let lineIndex = 0; lineIndex < rows.length; lineIndex += 1) {
+    const row = rows[lineIndex];
+    const label = cartLineLabel(row, lineIndex);
+    const needsSelection =
+      Array.isArray(row?.bostaSkuOptions) && row.bostaSkuOptions.length > 1;
+    const skuCode = resolveBostaSkuCodeFromRow(row);
+
+    if (needsSelection && !skuCode) {
+      errors.push(`اختاري SKU بوسطة للمنتج: ${label}`);
+      continue;
+    }
+
+    if (!skuCode) {
+      errors.push(`لا يوجد SKU بوسطة للمنتج: ${label}`);
+      continue;
+    }
+
+    const price = await resolveCartRowSystemPrice(row);
+    lineSkus.push({
+      lineIndex,
+      skuCode,
+      quantity: Math.max(1, Number(row?.quantity) || 1),
+      price,
+    });
+  }
+
   if (errors.length > 0) {
     return { lineSkus: [], error: errors.join("\n") };
+  }
+
+  if (lineSkus.length !== rows.length) {
+    return {
+      lineSkus: [],
+      error: `تعذر تجهيز SKU بوسطة لكل المنتجات (${lineSkus.length}/${rows.length})`,
+    };
   }
 
   return { lineSkus };
 }
 
 /** @deprecated Use resolveBostaLineSkusForSend */
-export function resolveBostaSkuForSend(cartItems) {
-  const { lineSkus, error } = resolveBostaLineSkusForSend(cartItems);
+export async function resolveBostaSkuForSend(cartItems) {
+  const { lineSkus, error } = await resolveBostaLineSkusForSend(cartItems);
   if (error) return { bostaSku: "", error };
   if (lineSkus.length === 0) return { bostaSku: "" };
   if (lineSkus.length > 1) {
