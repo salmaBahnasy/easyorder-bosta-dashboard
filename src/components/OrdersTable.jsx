@@ -9,6 +9,7 @@ import {
   orderPhone,
   orderRowKey,
   orderShippingStatus,
+  orderBostaStatus,
   orderStatus,
   orderType,
   orderTypeDisplayLabel,
@@ -47,6 +48,13 @@ function shippingStatusDisplayLabel(code) {
   return map[key] ?? String(code);
 }
 
+function shippingStatusBadgeTone(code) {
+  const key = String(code ?? "").trim().toLowerCase();
+  if (key === "failed") return "red";
+  if (key === "delivered") return "green";
+  return "gray";
+}
+
 function getStatusPresentation(value) {
   const normalized = normalizeStatus(value);
   const map = {
@@ -60,8 +68,10 @@ function getStatusPresentation(value) {
     followup: { label: "متابعة", tone: "gray" },
     repeater: { label: "مكرر", tone: "gray" },
     duplicate: { label: "مكرر", tone: "gray" },
-    confirmed: { label: "تم التأكيد", tone: "green" },
+    confirmed: { label: "تم التأكيد", tone: "teal" },
     shipped: { label: "تم الشحن", tone: "green" },
+    "تم التأكيد": { label: "تم التأكيد", tone: "teal" },
+    "تم الشحن": { label: "تم الشحن", tone: "green" },
   };
   return map[normalized] ?? { label: value || "—", tone: "gray" };
 }
@@ -153,6 +163,7 @@ export default function OrdersTable({
             <th>العميل</th>
             <th>الموبايل</th>
             <th>حالة الطلب</th>
+            <th>حالة الشحن على بوسطة</th>
             <th>المنتج</th>
             {/* <th>الكمية</th> */}
             {/* <th>الإجمالي</th> */}
@@ -171,6 +182,7 @@ export default function OrdersTable({
             const typeLabel = orderTypeDisplayLabel(orderType(order));
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
+            const bostaStatus = orderBostaStatus(order);
             const showShippingWithStatus =
               isShippedOrderStatus(order) && shipLabel;
             const isHighlighted =
@@ -204,28 +216,42 @@ export default function OrdersTable({
                 <td>{orderPhone(order)}</td>
                 <td>
                   <div className="orders-table__status-cell">
-                    <span
-                      className={`orders-table__badge orders-table__badge--${statusView.tone}`}
-                    >
-                      {statusView.label}
-                    </span>
-                    {typeLabel ? (
+                    <div className="orders-table__status-meta">
                       <span
-                        className="orders-table__shipping-beside"
-                        title="نوع الطلب"
+                        className={`orders-table__badge orders-table__badge--${statusView.tone}`}
                       >
-                        · {typeLabel}
+                        {statusView.label}
                       </span>
-                    ) : null}
+                      {typeLabel ? (
+                        <span
+                          className="orders-table__shipping-beside"
+                          title="نوع الطلب"
+                        >
+                          · {typeLabel}
+                        </span>
+                      ) : null}
+                    </div>
                     {showShippingWithStatus ? (
                       <span
-                        className="orders-table__shipping-beside"
-                        title="حالة الشحن"
+                        className={`orders-table__badge orders-table__badge--${shippingStatusBadgeTone(shipCode)}`}
+                        title="حالة التوصيل"
                       >
-                        · {shipLabel}
+                        {shipLabel}
                       </span>
                     ) : null}
                   </div>
+                </td>
+                <td className="orders-table__bosta-cell">
+                  {bostaStatus ? (
+                    <span
+                      className="orders-table__bosta-status"
+                      title="حالة الطلب على بوسطة"
+                    >
+                      {bostaStatus}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="orders-table__product-cell">
                   {productLines.length === 0 ? (

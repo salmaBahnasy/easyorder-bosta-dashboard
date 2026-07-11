@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { createOrder } from "../../api/ordersApi";
+import { createOrder, sendOrderToBosta } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import CartProductSelect from "../../components/CartProductSelect";
 import CartProductVariantSelect from "../../components/CartProductVariantSelect";
@@ -25,6 +25,7 @@ import {
   buildEasyOrderCreatePayload,
   PAYMENT_METHOD_OPTIONS,
   paymentMethodOptionLabel,
+  resolveEasyOrderPaymentMethod,
 } from "../../utils/easyOrderOrderPayload";
 import { validateCreateOrderForm } from "../../utils/createOrderValidation";
 import {
@@ -36,7 +37,10 @@ import {
   applyBostaSkuSelection,
   clearCartRowBostaSkuFields,
   loadBostaSkusForCatalogProduct,
+  resolveBostaLineSkusForSend,
 } from "../../utils/cartBostaSkus";
+import { formatApiErrorMessage } from "../../utils/apiErrors";
+import { orderDetailRouteId } from "../../utils/orderDisplay";
 import "./OrderPayloadDetailsPage.css";
 import "./CreateOrderPage.css";
 
@@ -104,6 +108,12 @@ function lineSubtotal(row) {
   return q * p;
 }
 
+function resolveCreatedOrderId(created) {
+  const order =
+    created?.data?.order ?? created?.order ?? created?.data ?? created;
+  return orderDetailRouteId(order);
+}
+
 export default function CreateOrderPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -115,6 +125,8 @@ export default function CreateOrderPage() {
     useProductCatalog(cartItems);
   const [selectedOrderStatus, setSelectedOrderStatus] = useState("جديد");
   const [creating, setCreating] = useState(false);
+  const [sendingToBosta, setSendingToBosta] = useState(false);
+  const [bostaSendPhase, setBostaSendPhase] = useState(null);
   const [feedbackModal, setFeedbackModal] = useState({
     open: false,
     variant: "success",
@@ -355,13 +367,7 @@ export default function CreateOrderPage() {
     setField("mobile2", digits);
   }
 
-  async function handleCreateOrder() {
-    const validation = validateCreateOrderForm(form, cartItems);
-    if (!validation.valid) {
-      showFeedback("error", validation.errors.join("\n"));
-      return;
-    }
-
+  function buildCreatePayload(validation) {
     const { linesForPayload, phoneDigits, phone2Digits } = validation;
 
     const uiStatus = selectedOrderStatus || "جديد";
@@ -387,7 +393,7 @@ export default function CreateOrderPage() {
     const shippingCost = Number(form.shipping_cost) || 0;
     const totalCost = Number(form.codAmount) || grandTotalSuggested || 0;
 
-    const payload = buildEasyOrderCreatePayload({
+    return buildEasyOrderCreatePayload({
       id: form.orderAlias?.trim() || `manual-order-${Date.now()}`,
       fullName: form.firstName,
       phone: phoneDigits,
@@ -408,10 +414,18 @@ export default function CreateOrderPage() {
       note: form.note,
       createdAt: nowIso,
     });
+  }
+
+  async function handleCreateOrder() {
+    const validation = validateCreateOrderForm(form, cartItems);
+    if (!validation.valid) {
+      showFeedback("error", validation.errors.join("\n"));
+      return;
+    }
 
     try {
       setCreating(true);
-      await createOrder(payload);
+      await createOrder(buildCreatePayload(validation));
       showFeedback("success", "تم إنشاء الطلب بنجاح", { navigateAfterClose: true });
     } catch (error) {
       console.log(error);
@@ -423,6 +437,77 @@ export default function CreateOrderPage() {
     }
   }
 
+  async function handleCreateAndSendToBosta() {
+    const validation = validateCreateOrderForm(form, cartItems);
+    if (!validation.valid) {
+      showFeedback("error", validation.errors.join("\n"));
+      return;
+    }
+
+    const lineSkusResult = resolveBostaLineSkusForSend(cartItems);
+    if (lineSkusResult.error) {
+      showFeedback("error", lineSkusResult.error);
+      return;
+    }
+
+    let orderCreated = false;
+
+    try {
+      setSendingToBosta(true);
+      setBostaSendPhase("creating");
+
+      const created = await createOrder(buildCreatePayload(validation));
+      orderCreated = true;
+
+      const orderId = resolveCreatedOrderId(created);
+      if (!orderId) {
+        showFeedback(
+          "error",
+          "تم إنشاء الطلب لكن لم يُعاد رقم الطلب — تعذر الإرسال إلى بوسطة",
+          { navigateAfterClose: true },
+        );
+        return;
+      }
+
+      setBostaSendPhase("sending");
+      await sendOrderToBosta(orderId, {
+        cityId: form.cityId,
+        districtId: form.districtId,
+        firstLine: form.firstLine,
+        mobile: validation.phoneDigits,
+        payment_method: resolveEasyOrderPaymentMethod(form.payment_method),
+        note: form.note,
+        allowToOpenPackage: form.allowToOpenPackage,
+        lineSkus: lineSkusResult.lineSkus,
+      });
+
+      showFeedback(
+        "success",
+        "تم إنشاء الطلب وإرساله إلى بوسطة بنجاح",
+        { navigateAfterClose: true },
+      );
+    } catch (error) {
+      console.error("[create-and-send-to-bosta]", error?.response?.data ?? error);
+      const fallback = orderCreated
+        ? "تم إنشاء الطلب لكن تعذر إرساله إلى بوسطة"
+        : "تعذر إنشاء الطلب";
+      showFeedback("error", formatApiErrorMessage(error, fallback), {
+        navigateAfterClose: orderCreated,
+      });
+    } finally {
+      setSendingToBosta(false);
+      setBostaSendPhase(null);
+    }
+  }
+
+  const isSubmitting = creating || sendingToBosta;
+
+  const bostaSendButtonLabel = (() => {
+    if (bostaSendPhase === "creating") return "جاري الإنشاء...";
+    if (bostaSendPhase === "sending") return "جاري الإرسال...";
+    return "إرسال إلى بوسطة";
+  })();
+
   return (
     <div className="order-details-page create-order-page--shell">
       <div className="order-details-page__topbar">
@@ -432,13 +517,21 @@ export default function CreateOrderPage() {
         <span className="order-details-page__updated-by">
           {copiedCustomerBanner
             ? "تم نسخ بيانات العميل — أكملي المنتجات ثم أنشئي الطلب"
-            : "أدخلي البيانات ثم اضغطي «إنشاء الطلب»"}
+            : "أدخلي البيانات ثم أنشئي الطلب أو أرسليه إلى بوسطة"}
         </span>
         <div className="order-details-page__topbar-actions">
           <button
             type="button"
+            onClick={handleCreateAndSendToBosta}
+            disabled={isSubmitting}
+            className="order-details-page__btn order-details-page__btn--soft"
+          >
+            {bostaSendButtonLabel}
+          </button>
+          <button
+            type="button"
             onClick={handleCreateOrder}
-            disabled={creating}
+            disabled={isSubmitting}
             className="order-details-page__btn order-details-page__btn--primary"
           >
             {creating ? "جاري الإنشاء..." : "إنشاء الطلب"}

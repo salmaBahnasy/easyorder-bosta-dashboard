@@ -398,6 +398,27 @@ export function orderShippingStatus(order) {
   return null;
 }
 
+/** حالة الطلب على بوسطة (bosta_status). */
+export function orderBostaStatus(order) {
+  let v =
+    order.bosta_status ?? order.bostaStatus ?? order["Bosta Status"];
+  if (v != null && String(v).trim() !== "") return String(v).trim();
+
+  let rd = order?.raw_data;
+  if (typeof rd === "string") {
+    try {
+      rd = JSON.parse(rd);
+    } catch {
+      rd = null;
+    }
+  }
+  if (rd && typeof rd === "object") {
+    v = rd.bosta_status ?? rd.bostaStatus;
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return null;
+}
+
 /** للتنقل لصفحة التفاصيل: الـ API عادة يتوقع uuid في `id` */
 export function orderDetailRouteId(order) {
   return order.id ?? order["Order ID"] ?? order.shortId ?? order.short_id;

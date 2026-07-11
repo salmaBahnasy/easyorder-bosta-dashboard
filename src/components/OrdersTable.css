@@ -10,7 +10,7 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  min-width: 960px;
+  min-width: 1080px;
 }
 
 .orders-table thead th {
@@ -101,6 +101,16 @@
   color: #2f7e34;
 }
 
+.orders-table__badge--teal {
+  background: rgba(20, 184, 166, 0.18);
+  color: #0f766e;
+}
+
+.orders-table__badge--blue {
+  background: rgba(59, 130, 246, 0.16);
+  color: #1d4ed8;
+}
+
 .orders-table__badge--red {
   background: rgba(239, 68, 68, 0.18);
   color: #b42318;
@@ -132,9 +142,29 @@
 
 .orders-table__status-cell {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.orders-table__status-meta {
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 6px;
+}
+
+.orders-table__bosta-cell {
+  min-width: 120px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.orders-table__bosta-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  line-height: 1.35;
 }
 
 .orders-table__shipping-beside {

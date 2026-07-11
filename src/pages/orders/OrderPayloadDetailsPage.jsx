@@ -959,7 +959,7 @@ export default function OrderPayloadDetailsPage() {
     متابعة: "#3498db",
     مكرر: "#9b59b6",
     "تم الشحن": "#27ae60",
-    "تم التأكيد": "#16a085",
+    "تم التأكيد": "#0d9488",
     جديد: "#7f8c8d",
   };
   const statusBadgeColor = statusColorMap[currentOrderStatus] ?? "#7f8c8d";
