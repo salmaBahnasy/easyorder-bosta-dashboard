@@ -82,7 +82,7 @@ export default function OrdersPage() {
   ];
 
   const customerStatusOptions = [
-    { value: "", label: "كل حالات العميل" },
+    { value: "", label: "كل حالات easyconfirm" },
     { value: "new", label: "قيد المراجعة" },
     { value: "canceled", label: "لاغي" },
     { value: "no_replay", label: "لا يرد" },
@@ -454,7 +454,7 @@ export default function OrdersPage() {
         </label>
 
         <label className="orders-page__field">
-          حالة العميل
+          easyconfirm
           <select
             className="orders-page__input"
             value={filters.customerStatus}

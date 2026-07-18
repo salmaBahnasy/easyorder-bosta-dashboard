@@ -51,7 +51,9 @@ function shippingStatusDisplayLabel(code) {
 }
 
 function shippingStatusBadgeTone(code) {
-  const key = String(code ?? "").trim().toLowerCase();
+  const key = String(code ?? "")
+    .trim()
+    .toLowerCase();
   if (key === "failed") return "red";
   if (key === "delivered") return "green";
   return "gray";
@@ -122,7 +124,6 @@ export default function OrdersTable({
     });
   }, [highlightOrderId, orders]);
 
-
   const openWhatsAppConfirm = (order) => {
     let phone = String(order?.phone || "").replace(/\D/g, "");
 
@@ -165,8 +166,8 @@ export default function OrdersTable({
             <th>العميل</th>
             <th>الموبايل</th>
             <th>حالة الطلب</th>
-            <th>حالة العميل</th>
-            <th>حالة الشحن على بوسطة</th>
+            <th>EasyConfirm</th>
+            <th>Bosta</th>
             <th>المنتج</th>
             {/* <th>الكمية</th> */}
             {/* <th>الإجمالي</th> */}
@@ -204,7 +205,7 @@ export default function OrdersTable({
                 className={
                   isHighlighted
                     ? "orders-table__row orders-table__row--highlighted"
-                      : "orders-table__row"
+                    : "orders-table__row"
                 }
                 title="اضغطي لفتح تفاصيل الطلب"
               >
@@ -254,7 +255,7 @@ export default function OrdersTable({
                   {customerStatusView ? (
                     <span
                       className={`orders-table__badge orders-table__badge--${customerStatusView.tone}`}
-                      title="حالة العميل"
+                      title="Easy Confirm"
                     >
                       {customerStatusLabel || customerStatusView.label}
                     </span>
@@ -264,10 +265,7 @@ export default function OrdersTable({
                 </td>
                 <td className="orders-table__bosta-cell">
                   {bostaStatus ? (
-                    <span
-                      className="orders-table__bosta-status"
-                      title="حالة الطلب على بوسطة"
-                    >
+                    <span className="orders-table__bosta-status" title="Bosta">
                       {bostaStatus}
                     </span>
                   ) : (
