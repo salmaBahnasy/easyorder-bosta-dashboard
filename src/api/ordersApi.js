@@ -97,6 +97,8 @@ export function buildOrdersListFilterParams({
   full_name,
   fullName,
   name,
+  customerStatus,
+  customer_status,
   from,
   to,
   order_source,
@@ -120,12 +122,17 @@ export function buildOrdersListFilterParams({
   ]
     .map((v) => String(v ?? "").trim())
     .find(Boolean);
+  const customerStatusQuery = String(
+    customerStatus ?? customer_status ?? "",
+  ).trim();
 
   const params = {
     status,
     employee_id: employee,
     phone,
     customer_name: customerNameQuery,
+    customerStatus: customerStatusQuery || undefined,
+    customer_status: customerStatusQuery || undefined,
     from: toApiQueryDate(from, false),
     to: toApiQueryDate(to, true),
     order_source,

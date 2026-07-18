@@ -358,6 +358,53 @@ export function orderStatus(order) {
   );
 }
 
+/** حالة العميل من الطلب (`customerStatus` / `customer_status`). */
+export function orderCustomerStatus(order) {
+  if (!order || typeof order !== "object") return null;
+  const raw =
+    order.customerStatus ??
+    order.customer_status ??
+    order["Customer Status"] ??
+    order.customer?.status ??
+    order.customer?.customerStatus;
+  const text = String(raw ?? "").trim();
+  return text || null;
+}
+
+const CUSTOMER_STATUS_LABELS = {
+  new: "قيد المراجعة",
+  جديد: "قيد المراجعة",
+  canceled: "لاغي",
+  cancelled: "لاغي",
+  لاغي: "لاغي",
+  no_replay: "لا يرد",
+  "no replay": "لا يرد",
+  "no reply": "لا يرد",
+  "لا يرد": "لا يرد",
+  "follow up": "متابعة",
+  follow_up: "متابعة",
+  followup: "متابعة",
+  متابعة: "متابعة",
+  repeater: "مكرر",
+  duplicate: "مكرر",
+  مكرر: "مكرر",
+  confirmed: "تم التأكيد",
+  Confirmed: "تم التأكيد",
+  "تم التأكيد": "تم التأكيد",
+  shipped: "تم الشحن",
+  Shipped: "تم الشحن",
+  "تم الشحن": "تم الشحن",
+};
+
+export function orderCustomerStatusDisplayLabel(value) {
+  if (value == null || value === "") return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (CUSTOMER_STATUS_LABELS[raw]) return CUSTOMER_STATUS_LABELS[raw];
+  const key = raw.toLowerCase().replace(/[_-]/g, " ").replace(/\s+/g, " ");
+  return CUSTOMER_STATUS_LABELS[key] ?? raw;
+}
+
 const ORDER_TYPE_LABELS = {
   new: "أوردر جديد",
   replacement: "استبدال",

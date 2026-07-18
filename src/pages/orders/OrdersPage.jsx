@@ -81,6 +81,17 @@ export default function OrdersPage() {
     { value: "failed", label: "فشل" },
   ];
 
+  const customerStatusOptions = [
+    { value: "", label: "كل حالات العميل" },
+    { value: "new", label: "قيد المراجعة" },
+    { value: "canceled", label: "لاغي" },
+    { value: "no_replay", label: "لا يرد" },
+    { value: "follow up", label: "متابعة" },
+    { value: "repeater", label: "مكرر" },
+    { value: "Confirmed", label: "تم التأكيد" },
+    { value: "Shipped", label: "تم الشحن" },
+  ];
+
   function normalizeStatus(value) {
     return String(value ?? "")
       .trim()
@@ -150,6 +161,7 @@ export default function OrdersPage() {
       product_id: nextFilters.product_id?.trim() || undefined,
       phone: nextFilters.phone?.trim() || undefined,
       customer_name: nextFilters.customer_name?.trim() || undefined,
+      customerStatus: nextFilters.customerStatus || undefined,
     };
   }
 
@@ -435,6 +447,24 @@ export default function OrdersPage() {
           >
             {statusOptions.map((option) => (
               <option key={option.value || "all-statuses"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          حالة العميل
+          <select
+            className="orders-page__input"
+            value={filters.customerStatus}
+            onChange={(e) => handleFilterChange("customerStatus", e.target.value)}
+          >
+            {customerStatusOptions.map((option) => (
+              <option
+                key={option.value || "all-customer-statuses"}
+                value={option.value}
+              >
                 {option.label}
               </option>
             ))}

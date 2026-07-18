@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import {
   orderCartProductLines,
   orderCustomer,
+  orderCustomerStatus,
+  orderCustomerStatusDisplayLabel,
   orderDate,
   orderHasNote,
   orderNote,
@@ -163,6 +165,7 @@ export default function OrdersTable({
             <th>العميل</th>
             <th>الموبايل</th>
             <th>حالة الطلب</th>
+            <th>حالة العميل</th>
             <th>حالة الشحن على بوسطة</th>
             <th>المنتج</th>
             {/* <th>الكمية</th> */}
@@ -179,6 +182,12 @@ export default function OrdersTable({
             const rowKey = orderRowKey(order, index);
             const productLines = orderCartProductLines(order);
             const statusView = getStatusPresentation(orderStatus(order));
+            const customerStatusRaw = orderCustomerStatus(order);
+            const customerStatusLabel =
+              orderCustomerStatusDisplayLabel(customerStatusRaw);
+            const customerStatusView = customerStatusRaw
+              ? getStatusPresentation(customerStatusRaw)
+              : null;
             const typeLabel = orderTypeDisplayLabel(orderType(order));
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
@@ -240,6 +249,18 @@ export default function OrdersTable({
                       </span>
                     ) : null}
                   </div>
+                </td>
+                <td>
+                  {customerStatusView ? (
+                    <span
+                      className={`orders-table__badge orders-table__badge--${customerStatusView.tone}`}
+                      title="حالة العميل"
+                    >
+                      {customerStatusLabel || customerStatusView.label}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="orders-table__bosta-cell">
                   {bostaStatus ? (
