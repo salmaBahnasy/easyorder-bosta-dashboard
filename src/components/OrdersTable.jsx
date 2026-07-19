@@ -16,7 +16,9 @@ import {
   orderType,
   orderTypeDisplayLabel,
   orderUpdatedByName,
+  isManualSystemOrder,
 } from "../utils/orderDisplay";
+import { canRefreshCustomerStatus } from "../utils/customerStatusRefresh";
 import {
   buildWhatsAppConfirmMessage,
   buildWhatsAppSendUrl,
@@ -217,9 +219,12 @@ export default function OrdersTable({
               : null;
             const customerStatusKey = normalizeStatus(customerStatusRaw);
             const isPendingCustomerStatus =
-              customerStatusKey === "pending" || !customerStatusRaw;
+              !isManualSystemOrder(order) &&
+              (customerStatusKey === "pending" || !customerStatusRaw);
             const showRefreshCustomerStatus =
-              Boolean(onRefreshCustomerStatus) && isPendingCustomerStatus;
+              Boolean(onRefreshCustomerStatus) &&
+              canRefreshCustomerStatus(order) &&
+              isPendingCustomerStatus;
             const isRefreshingCustomerStatus =
               isPendingCustomerStatus &&
               refreshingCustomerStatusId === rowKey;

@@ -141,6 +141,11 @@ export function buildEasyOrderCreatePayload({
     orderStatus,
     status,
     payment_method,
+    // طلبات الداشبورد اليدوية — EasyConfirm ثابت confirmed
+    customerStatus: "confirmed",
+    customer_status: "confirmed",
+    is_manual: true,
+    isManual: true,
     shipping_cost,
     expense: shipping_cost,
     cost,

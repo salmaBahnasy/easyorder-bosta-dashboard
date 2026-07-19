@@ -358,9 +358,39 @@ export function orderStatus(order) {
   );
 }
 
+/** طلبات منشأة يدويًا من الداشبورد (مش من EasyOrders). */
+export function isManualSystemOrder(order) {
+  if (!order || typeof order !== "object") return false;
+  if (
+    order.is_manual === true ||
+    order.isManual === true ||
+    order.manual === true ||
+    order.created_manually === true
+  ) {
+    return true;
+  }
+
+  const ids = [
+    order.id,
+    order.sourceOrderId,
+    order.source_order_id,
+    order["Order ID"],
+    order.orderId,
+    order.order_id,
+  ];
+
+  return ids.some((value) =>
+    /^manual-order-/i.test(String(value ?? "").trim()),
+  );
+}
+
 /** حالة العميل من الطلب (`customerStatus` / `customer_status`). */
 export function orderCustomerStatus(order) {
   if (!order || typeof order !== "object") return null;
+
+  // الطلبات اليدوية من السيستم تعتبر confirmed دائمًا
+  if (isManualSystemOrder(order)) return "confirmed";
+
   const raw =
     order.customerStatus ??
     order.customer_status ??

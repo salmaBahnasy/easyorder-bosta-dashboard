@@ -401,7 +401,12 @@ export default function CreateOrderPage() {
     const totalCost = Number(form.codAmount) || syncedSubtotal + shippingCost || 0;
 
     return buildEasyOrderCreatePayload({
-      id: form.orderAlias?.trim() || `manual-order-${Date.now()}`,
+      id: (() => {
+        const alias = String(form.orderAlias ?? "").trim();
+        if (!alias) return `manual-order-${Date.now()}`;
+        if (/^manual-order-/i.test(alias)) return alias;
+        return `manual-order-${alias}`;
+      })(),
       fullName: form.firstName,
       phone: phoneDigits,
       phone2: phone2Digits,

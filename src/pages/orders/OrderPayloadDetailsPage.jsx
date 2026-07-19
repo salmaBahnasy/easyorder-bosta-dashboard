@@ -43,6 +43,7 @@ import {
   formatOrderItemVariationProp,
 } from "../../utils/orderDisplay";
 import {
+  canRefreshCustomerStatus,
   isPendingCustomerStatus,
   pickCustomerStatusFromRefreshResult,
   resolveCustomerStatusRefreshOrderId,
@@ -273,6 +274,10 @@ export default function OrderPayloadDetailsPage() {
 
   useEffect(() => {
     if (!order) return undefined;
+    if (!canRefreshCustomerStatus(order)) {
+      setLiveCustomerStatus(orderCustomerStatus(order));
+      return undefined;
+    }
 
     const orderId = String(
       resolveCustomerStatusRefreshOrderId(order) ?? "",
@@ -542,6 +547,9 @@ export default function OrderPayloadDetailsPage() {
     resolveCustomerStatusRefreshOrderId(order);
 
   async function handleRefreshCustomerStatus() {
+    if (!canRefreshCustomerStatus(order)) {
+      return;
+    }
     const orderId = String(orderIdForCustomerStatusRefresh ?? "").trim();
     if (!orderId) {
       setFeedbackModal({
@@ -1152,7 +1160,8 @@ export default function OrderPayloadDetailsPage() {
     return easyConfirmStatus ? "default" : "empty";
   })();
   const showRefreshCustomerStatus =
-    easyConfirmKey === "pending" || !easyConfirmStatus;
+    canRefreshCustomerStatus(order) &&
+    (easyConfirmKey === "pending" || !easyConfirmStatus);
   const showCustomerStatusLoading =
     refreshingCustomerStatus && showRefreshCustomerStatus;
 

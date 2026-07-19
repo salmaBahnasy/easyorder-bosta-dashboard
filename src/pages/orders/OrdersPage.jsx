@@ -15,6 +15,7 @@ import { formatApiErrorMessage } from "../../utils/apiErrors";
 import { orderRowKey } from "../../utils/orderDisplay";
 import {
   applyCustomerStatusToOrder,
+  canRefreshCustomerStatus,
   isPendingCustomerStatus,
   pickCustomerStatusFromRefreshResult,
   resolveCustomerStatusRefreshOrderId,
@@ -220,11 +221,13 @@ export default function OrdersPage() {
     if (loading || pendingCustomerStatusPass === 0) return undefined;
     if (!Array.isArray(orders) || orders.length === 0) return undefined;
 
-    const ordersToRefresh = orders.map((order, index) => ({
-      order,
-      index,
-      rowKey: orderRowKey(order, index),
-    }));
+    const ordersToRefresh = orders
+      .map((order, index) => ({
+        order,
+        index,
+        rowKey: orderRowKey(order, index),
+      }))
+      .filter(({ order }) => canRefreshCustomerStatus(order));
 
     if (ordersToRefresh.length === 0) return undefined;
 
@@ -426,6 +429,9 @@ export default function OrdersPage() {
   }
 
   async function handleRefreshCustomerStatus(order, rowIndex) {
+    if (!canRefreshCustomerStatus(order)) {
+      return;
+    }
     const orderId = String(
       resolveCustomerStatusRefreshOrderId(order) ?? "",
     ).trim();

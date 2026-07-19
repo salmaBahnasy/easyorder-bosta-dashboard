@@ -1,4 +1,4 @@
-import { orderCustomerStatus } from "./orderDisplay";
+import { isManualSystemOrder, orderCustomerStatus } from "./orderDisplay";
 
 export function resolveCustomerStatusRefreshOrderId(order) {
   return (
@@ -12,6 +12,13 @@ export function resolveCustomerStatusRefreshOrderId(order) {
   );
 }
 
+/** هل ينفع نحدّث الحالة من EasyOrders؟ (لا للطلبات اليدوية) */
+export function canRefreshCustomerStatus(order) {
+  if (!order) return false;
+  if (isManualSystemOrder(order)) return false;
+  return Boolean(String(resolveCustomerStatusRefreshOrderId(order) ?? "").trim());
+}
+
 export function normalizeCustomerStatusToken(value) {
   return String(value ?? "")
     .trim()
@@ -21,6 +28,13 @@ export function normalizeCustomerStatusToken(value) {
 }
 
 export function isPendingCustomerStatus(orderOrStatus) {
+  if (
+    orderOrStatus &&
+    typeof orderOrStatus === "object" &&
+    isManualSystemOrder(orderOrStatus)
+  ) {
+    return false;
+  }
   const raw =
     typeof orderOrStatus === "object" && orderOrStatus !== null
       ? orderCustomerStatus(orderOrStatus)
