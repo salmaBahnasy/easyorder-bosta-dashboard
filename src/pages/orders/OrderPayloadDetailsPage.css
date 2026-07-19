@@ -89,46 +89,6 @@
   border: 1px solid transparent;
 }
 
-.order-details-page__easyconfirm-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.order-details-page__btn--easyconfirm-refresh {
-  background: #fff;
-  border-color: #7c3aed;
-  color: #6d28d9;
-  font-weight: 700;
-  padding: 0;
-  width: 34px;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.order-details-page__btn--easyconfirm-refresh:hover:not(:disabled) {
-  background: #f5f3ff;
-}
-
-.order-details-page__refresh-icon {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
-.order-details-page__refresh-icon--spin {
-  animation: order-details-refresh-spin 0.8s linear infinite;
-}
-
-@keyframes order-details-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .order-details-page__easyconfirm--default {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.16));
   border-color: rgba(99, 102, 241, 0.35);

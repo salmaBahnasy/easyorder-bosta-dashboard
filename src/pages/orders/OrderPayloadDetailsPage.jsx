@@ -44,7 +44,6 @@ import {
 } from "../../utils/orderDisplay";
 import {
   canRefreshCustomerStatus,
-  isPendingCustomerStatus,
   pickCustomerStatusFromRefreshResult,
   resolveCustomerStatusRefreshOrderId,
 } from "../../utils/customerStatusRefresh";
@@ -266,7 +265,6 @@ export default function OrderPayloadDetailsPage() {
   const [bostaSendPhase, setBostaSendPhase] = useState(null);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
   const [liveCustomerStatus, setLiveCustomerStatus] = useState(null);
-  const [refreshingCustomerStatus, setRefreshingCustomerStatus] = useState(false);
 
   useEffect(() => {
     setLiveCustomerStatus(orderCustomerStatus(order));
@@ -287,9 +285,7 @@ export default function OrderPayloadDetailsPage() {
     let cancelled = false;
 
     async function refreshOnOpen() {
-      const showLoading = isPendingCustomerStatus(order);
       try {
-        if (showLoading) setRefreshingCustomerStatus(true);
         const result = await refreshCustomerStatus(orderId);
         if (cancelled) return;
         if (result?.success === false) return;
@@ -305,8 +301,6 @@ export default function OrderPayloadDetailsPage() {
             error?.response?.data ?? error,
           );
         }
-      } finally {
-        if (!cancelled && showLoading) setRefreshingCustomerStatus(false);
       }
     }
 
@@ -542,59 +536,6 @@ export default function OrderPayloadDetailsPage() {
 
   const orderIdForStatusUpdate =
     order?.id ?? order?.["Order ID"] ?? order?.orderId ?? order?.order_id ?? null;
-
-  const orderIdForCustomerStatusRefresh =
-    resolveCustomerStatusRefreshOrderId(order);
-
-  async function handleRefreshCustomerStatus() {
-    if (!canRefreshCustomerStatus(order)) {
-      return;
-    }
-    const orderId = String(orderIdForCustomerStatusRefresh ?? "").trim();
-    if (!orderId) {
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: "لا يوجد رقم طلب صالح لتحديث حالة easyconfirm",
-      });
-      return;
-    }
-
-    try {
-      setRefreshingCustomerStatus(true);
-      const result = await refreshCustomerStatus(orderId);
-      if (result?.success === false) {
-        throw new Error(result?.message || "تعذر تحديث حالة easyconfirm");
-      }
-
-      const nextStatus = pickCustomerStatusFromRefreshResult(result);
-      if (nextStatus) {
-        setLiveCustomerStatus(nextStatus);
-      }
-
-      const changed = result?.data?.changed;
-      const message =
-        result?.message ||
-        (changed
-          ? "تم تحديث حالة easyconfirm من EasyOrders"
-          : "تم جلب حالة easyconfirm — لا يوجد تغيير");
-
-      setFeedbackModal({
-        open: true,
-        variant: "success",
-        message,
-      });
-    } catch (error) {
-      console.error("[refresh-customer-status]", error?.response?.data ?? error);
-      setFeedbackModal({
-        open: true,
-        variant: "error",
-        message: formatApiErrorMessage(error, "تعذر تحديث حالة easyconfirm"),
-      });
-    } finally {
-      setRefreshingCustomerStatus(false);
-    }
-  }
 
   const statusButtons = [
     { key: "cancelled", label: "لاغي", bg: "#e74c3c" },
@@ -1159,12 +1100,6 @@ export default function OrderPayloadDetailsPage() {
     if (easyConfirmKey === "failed") return "failed";
     return easyConfirmStatus ? "default" : "empty";
   })();
-  const showRefreshCustomerStatus =
-    canRefreshCustomerStatus(order) &&
-    (easyConfirmKey === "pending" || !easyConfirmStatus);
-  const showCustomerStatusLoading =
-    refreshingCustomerStatus && showRefreshCustomerStatus;
-
   return (
     <div className="order-details-page">
       <div className="order-details-page__topbar">
@@ -1196,44 +1131,12 @@ export default function OrderPayloadDetailsPage() {
             </label>
             <div className="order-details-page__topbar-mini-field">
               <span className="order-details-page__topbar-mini-label">easyconfirm</span>
-              <div className="order-details-page__easyconfirm-row">
-                <span
-                  className={`order-details-page__easyconfirm order-details-page__easyconfirm--${easyConfirmTone}`}
-                  title="حالة easyconfirm (غير قابلة للتعديل)"
-                >
-                  {easyConfirmLabel}
-                </span>
-                {showRefreshCustomerStatus ? (
-                  <button
-                    type="button"
-                    className="order-details-page__btn order-details-page__btn--easyconfirm-refresh"
-                    onClick={handleRefreshCustomerStatus}
-                    disabled={
-                      showCustomerStatusLoading || savingOrder || sendingToBosta
-                    }
-                    title="تحديث حالة EasyConfirm"
-                    aria-label="تحديث حالة EasyConfirm"
-                  >
-                    <svg
-                      className={
-                        showCustomerStatusLoading
-                          ? "order-details-page__refresh-icon order-details-page__refresh-icon--spin"
-                          : "order-details-page__refresh-icon"
-                      }
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M21 12a9 9 0 1 1-2.1-5.7" />
-                      <polyline points="21 3 21 9 15 9" />
-                    </svg>
-                  </button>
-                ) : null}
-              </div>
+              <span
+                className={`order-details-page__easyconfirm order-details-page__easyconfirm--${easyConfirmTone}`}
+                title="حالة easyconfirm (غير قابلة للتعديل)"
+              >
+                {easyConfirmLabel}
+              </span>
             </div>
             <label className="order-details-page__topbar-mini-field">
               <span className="order-details-page__topbar-mini-label">نوع الطلب</span>
