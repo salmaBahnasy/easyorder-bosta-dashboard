@@ -6,11 +6,19 @@ import {
   getEmployees,
   getOrders,
   getProducts,
+  refreshCustomerStatus,
   resolveEmployeeOrderFilterParams,
 } from "../../api/ordersApi";
 import { appHref } from "../../utils/auth";
 import OrdersTable from "../../components/OrdersTable";
+import { formatApiErrorMessage } from "../../utils/apiErrors";
 import { orderRowKey } from "../../utils/orderDisplay";
+import {
+  applyCustomerStatusToOrder,
+  isPendingCustomerStatus,
+  pickCustomerStatusFromRefreshResult,
+  resolveCustomerStatusRefreshOrderId,
+} from "../../utils/customerStatusRefresh";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
 import {
   getProductFilterId,
@@ -47,6 +55,10 @@ export default function OrdersPage() {
   const [highlightOrderId, setHighlightOrderId] = useState(
     () => bootStateRef.current.focusedOrderId ?? null,
   );
+  const [refreshingCustomerStatusId, setRefreshingCustomerStatusId] =
+    useState(null);
+  const [pendingCustomerStatusPass, setPendingCustomerStatusPass] = useState(0);
+  const customerStatusRefreshGenRef = useRef(0);
   const statusOptions = [
     { value: "", label: "كل الحالات" },
     { value: "new", label: "قيد المراجعة" },
@@ -82,14 +94,11 @@ export default function OrdersPage() {
   ];
 
   const customerStatusOptions = [
-    { value: "", label: "كل حالات easyconfirm" },
-    { value: "new", label: "قيد المراجعة" },
-    { value: "canceled", label: "لاغي" },
-    { value: "no_replay", label: "لا يرد" },
-    { value: "follow up", label: "متابعة" },
-    { value: "repeater", label: "مكرر" },
+    { value: "", label: "كل الحالات" },
     { value: "Confirmed", label: "تم التأكيد" },
-    { value: "Shipped", label: "تم الشحن" },
+    { value: "canceled", label: "لاغي" },
+    { value: "pending", label: "pending" },
+    { value: "failed", label: "failed" },
   ];
 
   function normalizeStatus(value) {
@@ -175,13 +184,16 @@ export default function OrdersPage() {
         ...buildOrdersApiFilters(nextFilters),
       });
 
-      const { list, page, total, totalPages } = parseOrdersResponse(result);
+      const { list, page, total, totalPages } = parseOrdersResponse(result, {
+        limit,
+      });
       const resolvedPage = page ?? pageNumber;
       setOrders(list);
       setPage(resolvedPage);
       setTotal(total ?? list.length);
       setTotalPages(totalPages ?? 1);
       writeOrdersListState({ filters: nextFilters, page: resolvedPage });
+      setPendingCustomerStatusPass((n) => n + 1);
     } catch (error) {
       console.log(error);
       alert("حصل خطأ أثناء تحميل الطلبات");
@@ -203,6 +215,77 @@ export default function OrdersPage() {
     const timer = window.setTimeout(() => setHighlightOrderId(null), 5000);
     return () => window.clearTimeout(timer);
   }, [highlightOrderId, loading, orders]);
+
+  useEffect(() => {
+    if (loading || pendingCustomerStatusPass === 0) return undefined;
+    if (!Array.isArray(orders) || orders.length === 0) return undefined;
+
+    const ordersToRefresh = orders.map((order, index) => ({
+      order,
+      index,
+      rowKey: orderRowKey(order, index),
+    }));
+
+    if (ordersToRefresh.length === 0) return undefined;
+
+    const gen = customerStatusRefreshGenRef.current + 1;
+    customerStatusRefreshGenRef.current = gen;
+    let cancelled = false;
+
+    async function refreshCustomerStatusesInBackground() {
+      for (const entry of ordersToRefresh) {
+        if (cancelled || customerStatusRefreshGenRef.current !== gen) return;
+
+        const orderId = String(
+          resolveCustomerStatusRefreshOrderId(entry.order) ?? "",
+        ).trim();
+        if (!orderId) continue;
+
+        try {
+          if (isPendingCustomerStatus(entry.order)) {
+            setRefreshingCustomerStatusId(entry.rowKey);
+          }
+          const result = await refreshCustomerStatus(orderId);
+          if (cancelled || customerStatusRefreshGenRef.current !== gen) return;
+          if (result?.success === false) continue;
+
+          const nextStatus = pickCustomerStatusFromRefreshResult(result);
+          if (!nextStatus) continue;
+
+          setOrders((prev) =>
+            prev.map((item, index) => {
+              if (orderRowKey(item, index) !== entry.rowKey) return item;
+              return applyCustomerStatusToOrder(item, nextStatus);
+            }),
+          );
+        } catch (error) {
+          console.error(
+            "[refresh-customer-status:background]",
+            error?.response?.data ?? error,
+          );
+        } finally {
+          if (!cancelled && customerStatusRefreshGenRef.current === gen) {
+            setRefreshingCustomerStatusId((current) =>
+              current === entry.rowKey ? null : current,
+            );
+          }
+        }
+      }
+
+      if (!cancelled && customerStatusRefreshGenRef.current === gen) {
+        setRefreshingCustomerStatusId(null);
+      }
+    }
+
+    refreshCustomerStatusesInBackground();
+
+    return () => {
+      cancelled = true;
+      customerStatusRefreshGenRef.current += 1;
+    };
+    // Only re-run when a fresh list is fetched, not on each status patch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, pendingCustomerStatusPass]);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,6 +424,42 @@ export default function OrdersPage() {
       state: { copyFromOrder: order, ordersListState },
     });
   }
+
+  async function handleRefreshCustomerStatus(order, rowIndex) {
+    const orderId = String(
+      resolveCustomerStatusRefreshOrderId(order) ?? "",
+    ).trim();
+    if (!orderId) {
+      alert("لا يوجد رقم طلب صالح لتحديث حالة EasyConfirm");
+      return;
+    }
+
+    const rowKey = orderRowKey(order, rowIndex);
+    const showLoading = isPendingCustomerStatus(order);
+    try {
+      if (showLoading) setRefreshingCustomerStatusId(rowKey);
+      const result = await refreshCustomerStatus(orderId);
+      if (result?.success === false) {
+        throw new Error(result?.message || "تعذر تحديث حالة EasyConfirm");
+      }
+
+      const nextStatus = pickCustomerStatusFromRefreshResult(result);
+      if (nextStatus) {
+        setOrders((prev) =>
+          prev.map((item, index) => {
+            if (orderRowKey(item, index) !== rowKey) return item;
+            return applyCustomerStatusToOrder(item, nextStatus);
+          }),
+        );
+      }
+    } catch (error) {
+      console.error("[refresh-customer-status]", error?.response?.data ?? error);
+      alert(formatApiErrorMessage(error, "تعذر تحديث حالة EasyConfirm"));
+    } finally {
+      if (showLoading) setRefreshingCustomerStatusId(null);
+    }
+  }
+
   const employeeOptions = useMemo(() => {
     const mapped = employees
       .map((employee) => ({
@@ -374,32 +493,27 @@ export default function OrdersPage() {
 
   const filteredOrders = useMemo(() => orders, [orders]);
 
-  const hasLocalFilters = Boolean(
-    filters.status ||
-      filters.employee ||
-      filters.customer_name?.trim() ||
-      filters.phone?.trim(),
-  );
-
   const summaryStats = useMemo(() => {
-    const normalized = filteredOrders.map((order) => normalizeStatus(getOrderStatus(order)));
+    const normalized = filteredOrders.map((order) =>
+      normalizeStatus(getOrderStatus(order)),
+    );
     const confirmed = normalized.filter((status) =>
-      ["confirmed", "تم التأكيد"].includes(status)
+      ["confirmed", "تم التأكيد"].includes(status),
     ).length;
     const cancelled = normalized.filter((status) =>
-      ["canceled", "cancelled", "لاغي"].includes(status)
+      ["canceled", "cancelled", "لاغي"].includes(status),
     ).length;
     const noReply = normalized.filter((status) =>
-      ["no replay", "no reply", "لا يرد"].includes(status)
+      ["no replay", "no reply", "لا يرد"].includes(status),
     ).length;
 
     return {
-      total: hasLocalFilters ? filteredOrders.length : total,
+      total,
       confirmed,
       cancelled,
       noReply,
     };
-  }, [filteredOrders, hasLocalFilters, total]);
+  }, [filteredOrders, total]);
 
   return (
     <div className="orders-page">
@@ -648,6 +762,8 @@ export default function OrdersPage() {
             highlightOrderId={highlightOrderId}
             onViewDetails={handleViewDetails}
             onCopyCustomer={handleCopyCustomer}
+            onRefreshCustomerStatus={handleRefreshCustomerStatus}
+            refreshingCustomerStatusId={refreshingCustomerStatusId}
           />
 
           <div className="orders-page__pagination">

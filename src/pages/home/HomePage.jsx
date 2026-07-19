@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getEmployees,
   getOrderCostChart,
@@ -23,7 +23,11 @@ import {
   TREND_METRIC_DEFS,
 } from "../../components/dashboard/DashboardCharts";
 import StatCard from "../../components/dashboard/StatCard";
-import DashboardStatsSkeleton from "../../components/dashboard/DashboardStatsSkeleton";
+import {
+  DonutCardSkeleton,
+  KpiCardsSkeleton,
+  TrendChartSkeleton,
+} from "../../components/dashboard/DashboardStatsSkeleton";
 import "./HomePage.css";
 import {
   getProductFilterId,
@@ -151,6 +155,8 @@ export default function HomePage() {
   const [productSalesChart, setProductSalesChart] = useState(null);
   const [stats, setStats] = useState(null);
   const [loadingTrend, setLoadingTrend] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingProductSales, setLoadingProductSales] = useState(true);
   const [chartMetric, setChartMetric] = useState("totalOrders");
   const [productSalesProductId, setProductSalesProductId] = useState("");
   const [productSalesMetric, setProductSalesMetric] = useState("totalUnits");
@@ -197,20 +203,74 @@ export default function HomePage() {
     [dateRange, dateFrom, dateTo, productSalesGranularity],
   );
 
-  const fetchDashboardData = useCallback(async () => {
+  const applyProductSalesSelection = useCallback((productSales) => {
+    const productsList = Array.isArray(productSales?.products)
+      ? productSales.products
+      : [];
+    setProductSalesProductId((current) => {
+      if (productsList.length === 0) return "";
+      if (productsList.some((p) => p.product_id === current)) return current;
+      return productsList[0].product_id;
+    });
+  }, []);
+
+  const dashboardLoadGenRef = useRef(0);
+
+  const loadDashboardSections = useCallback(() => {
     const query = buildDashboardQuery();
     const productSalesQuery = buildProductSalesQuery();
-    const [trendRes, statsRes, productSalesRes] = await Promise.all([
-      getOrdersStatsTrend(query),
-      getOrdersStats(query),
-      getProductSalesChart(productSalesQuery),
-    ]);
-    return {
-      chart: normalizeTrendChart(trendRes),
-      stats: normalizeStatsPayload(statsRes) ?? {},
-      productSales: normalizeProductSalesChart(productSalesRes),
-    };
-  }, [buildDashboardQuery, buildProductSalesQuery]);
+    const gen = dashboardLoadGenRef.current + 1;
+    dashboardLoadGenRef.current = gen;
+
+    setLoadingTrend(true);
+    setLoadingStats(true);
+    setLoadingProductSales(true);
+
+    getOrdersStatsTrend(query)
+      .then((trendRes) => {
+        if (dashboardLoadGenRef.current !== gen) return;
+        setTrendChart(normalizeTrendChart(trendRes));
+      })
+      .catch((error) => {
+        console.log(error);
+        if (dashboardLoadGenRef.current !== gen) return;
+        setTrendChart(null);
+      })
+      .finally(() => {
+        if (dashboardLoadGenRef.current === gen) setLoadingTrend(false);
+      });
+
+    getOrdersStats(query)
+      .then((statsRes) => {
+        if (dashboardLoadGenRef.current !== gen) return;
+        setStats(normalizeStatsPayload(statsRes) ?? {});
+      })
+      .catch((error) => {
+        console.log(error);
+        if (dashboardLoadGenRef.current !== gen) return;
+        setStats(null);
+      })
+      .finally(() => {
+        if (dashboardLoadGenRef.current === gen) setLoadingStats(false);
+      });
+
+    getProductSalesChart(productSalesQuery)
+      .then((productSalesRes) => {
+        if (dashboardLoadGenRef.current !== gen) return;
+        const productSales = normalizeProductSalesChart(productSalesRes);
+        setProductSalesChart(productSales);
+        applyProductSalesSelection(productSales);
+      })
+      .catch((error) => {
+        console.log(error);
+        if (dashboardLoadGenRef.current !== gen) return;
+        setProductSalesChart(null);
+        setProductSalesProductId("");
+      })
+      .finally(() => {
+        if (dashboardLoadGenRef.current === gen) setLoadingProductSales(false);
+      });
+  }, [applyProductSalesSelection, buildDashboardQuery, buildProductSalesQuery]);
 
   const fetchOrderCostChart = useCallback(async () => {
     const query = buildOrderCostChartRangeQuery({
@@ -333,74 +393,32 @@ export default function HomePage() {
   }, [products]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setLoadingTrend(true);
-        const { chart, stats: statsPayload, productSales } = await fetchDashboardData();
-        if (!cancelled) {
-          setTrendChart(chart);
-          setStats(statsPayload);
-          setProductSalesChart(productSales);
-          const products = Array.isArray(productSales?.products) ? productSales.products : [];
-          setProductSalesProductId((current) => {
-            if (products.length === 0) return "";
-            if (products.some((p) => p.product_id === current)) return current;
-            return products[0].product_id;
-          });
-        }
-      } catch (error) {
-        console.log(error);
-        if (!cancelled) {
-          setTrendChart(null);
-          setStats(null);
-          setProductSalesChart(null);
-          setProductSalesProductId("");
-        }
-      } finally {
-        if (!cancelled) setLoadingTrend(false);
-      }
-    })();
-
+    loadDashboardSections();
     return () => {
-      cancelled = true;
+      dashboardLoadGenRef.current += 1;
     };
-  }, [fetchDashboardData]);
+  }, [loadDashboardSections]);
 
   useEffect(() => {
     fetchOrderCostChart();
   }, [fetchOrderCostChart]);
 
-  async function handleRefreshStats() {
-    try {
-      setLoadingTrend(true);
-      const { chart, stats: statsPayload, productSales } = await fetchDashboardData();
-      setTrendChart(chart);
-      setStats(statsPayload);
-      setProductSalesChart(productSales);
-      const products = Array.isArray(productSales?.products) ? productSales.products : [];
-      setProductSalesProductId((current) => {
-        if (products.length === 0) return "";
-        if (products.some((p) => p.product_id === current)) return current;
-        return products[0].product_id;
-      });
-      await fetchOrderCostChart();
-    } catch (error) {
-      console.log(error);
-      setTrendChart(null);
-      setStats(null);
-      setProductSalesChart(null);
-      setProductSalesProductId("");
-    } finally {
-      setLoadingTrend(false);
-    }
+  function handleRefreshStats() {
+    loadDashboardSections();
+    fetchOrderCostChart();
   }
 
   const summary = trendChart?.summary ?? {};
   const trendPoints = trendChart?.points ?? [];
   const productSalesProducts = productSalesChart?.products ?? [];
   const periodHint = "ملخص الفترة المحددة";
+  const allSectionsFailed =
+    !loadingTrend &&
+    !loadingStats &&
+    !loadingProductSales &&
+    !trendChart &&
+    !stats &&
+    !productSalesChart;
 
   const kpiCards = useMemo(
     () =>
@@ -498,13 +516,18 @@ export default function HomePage() {
         </div>
       </section>
 
-      {loadingTrend ? (
-        <DashboardStatsSkeleton />
-      ) : !trendChart && !stats && !productSalesChart ? (
+      {allSectionsFailed ? (
         <p className="dashboard-load-error">تعذر تحميل الإحصائيات حاليًا.</p>
       ) : (
         <>
-          {trendChart ? (
+          {loadingTrend ? (
+            <>
+              <KpiCardsSkeleton />
+              <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+                <TrendChartSkeleton />
+              </section>
+            </>
+          ) : trendChart ? (
             <>
               <section className="dashboard-kpis dashboard-kpis--5">
                 {kpiCards.map((card) => (
@@ -519,34 +542,21 @@ export default function HomePage() {
                 ))}
               </section>
 
-              {trendChart ? (
-                <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
-                  <OrdersTrendLineChart
-                    points={trendPoints}
-                    metricKey={chartMetric}
-                    onMetricChange={setChartMetric}
-                  />
-                </section>
-              ) : null}
-              {productSalesChart ? (
-                <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
-                  <ProductSalesLineChart
-                    products={productSalesProducts}
-                    selectedProductId={productSalesProductId}
-                    onProductChange={setProductSalesProductId}
-                    metricKey={productSalesMetric}
-                    onMetricChange={setProductSalesMetric}
-                    granularity={productSalesGranularity}
-                    onGranularityChange={setProductSalesGranularity}
-                    truncated={Boolean(productSalesChart?.truncated)}
-                  />
-                  <ProductOrdersDonutCard
-                    products={productSalesProducts}
-                    truncated={Boolean(productSalesChart?.truncated)}
-                  />
-                </section>
-              ) : null}
+              <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+                <OrdersTrendLineChart
+                  points={trendPoints}
+                  metricKey={chartMetric}
+                  onMetricChange={setChartMetric}
+                />
+              </section>
             </>
+          ) : null}
+
+          {loadingProductSales ? (
+            <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
+              <TrendChartSkeleton />
+              <DonutCardSkeleton />
+            </section>
           ) : productSalesChart ? (
             <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
               <ProductSalesLineChart
@@ -566,7 +576,13 @@ export default function HomePage() {
             </section>
           ) : null}
 
-          {stats ? (
+          {loadingStats ? (
+            <section className="dashboard-charts-row dashboard-charts-row--donuts">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <DonutCardSkeleton key={`donut-skel-${index}`} />
+              ))}
+            </section>
+          ) : stats ? (
             <section className="dashboard-charts-row dashboard-charts-row--donuts">
               <OrdersDonutCard
                 title="حالات الطلب"

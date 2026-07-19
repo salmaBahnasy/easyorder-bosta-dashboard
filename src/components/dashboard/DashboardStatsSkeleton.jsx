@@ -1,7 +1,13 @@
 import "./DashboardStatsSkeleton.css";
 
 function SkeletonBone({ className = "", style }) {
-  return <span className={`dashboard-skeleton__bone ${className}`.trim()} style={style} aria-hidden="true" />;
+  return (
+    <span
+      className={`dashboard-skeleton__bone ${className}`.trim()}
+      style={style}
+      aria-hidden="true"
+    />
+  );
 }
 
 function StatCardSkeleton() {
@@ -17,7 +23,7 @@ function StatCardSkeleton() {
   );
 }
 
-function TrendChartSkeleton() {
+export function TrendChartSkeleton() {
   return (
     <article className="dashboard-skeleton dashboard-skeleton--chart dashboard-chart-card dashboard-chart-card--panel dashboard-trend-chart">
       <header className="dashboard-skeleton__chart-head">
@@ -34,7 +40,11 @@ function TrendChartSkeleton() {
           ))}
         </div>
         <div className="dashboard-skeleton__chart-plot">
-          <svg className="dashboard-skeleton__chart-line" viewBox="0 0 400 160" preserveAspectRatio="none">
+          <svg
+            className="dashboard-skeleton__chart-line"
+            viewBox="0 0 400 160"
+            preserveAspectRatio="none"
+          >
             <path d="M0,120 C40,100 80,130 120,90 C160,50 200,110 240,70 C280,30 320,80 360,40 L400,60 L400,160 L0,160 Z" />
             <path d="M0,120 C40,100 80,130 120,90 C160,50 200,110 240,70 C280,30 320,80 360,40 L400,60" />
           </svg>
@@ -49,7 +59,7 @@ function TrendChartSkeleton() {
   );
 }
 
-function DonutCardSkeleton() {
+export function DonutCardSkeleton() {
   return (
     <article className="dashboard-skeleton dashboard-skeleton--donut dashboard-chart-card dashboard-chart-card--panel">
       <header className="dashboard-skeleton__donut-head">
@@ -71,14 +81,24 @@ function DonutCardSkeleton() {
   );
 }
 
+export function KpiCardsSkeleton({ count = 5 } = {}) {
+  return (
+    <section className="dashboard-kpis dashboard-kpis--5" aria-busy="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <StatCardSkeleton key={`stat-${index}`} />
+      ))}
+    </section>
+  );
+}
+
 export default function DashboardStatsSkeleton() {
   return (
-    <div className="dashboard-stats-skeleton" aria-busy="true" aria-label="جاري تحميل الإحصائيات">
-      <section className="dashboard-kpis dashboard-kpis--5">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <StatCardSkeleton key={`stat-${index}`} />
-        ))}
-      </section>
+    <div
+      className="dashboard-stats-skeleton"
+      aria-busy="true"
+      aria-label="جاري تحميل الإحصائيات"
+    >
+      <KpiCardsSkeleton />
 
       <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
         <TrendChartSkeleton />

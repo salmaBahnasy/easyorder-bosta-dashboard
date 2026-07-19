@@ -372,11 +372,16 @@ export function orderCustomerStatus(order) {
 }
 
 const CUSTOMER_STATUS_LABELS = {
-  new: "قيد المراجعة",
-  جديد: "قيد المراجعة",
+  confirmed: "تم التأكيد",
+  Confirmed: "تم التأكيد",
+  "تم التأكيد": "تم التأكيد",
   canceled: "لاغي",
   cancelled: "لاغي",
   لاغي: "لاغي",
+  pending: "pending",
+  failed: "failed",
+  new: "قيد المراجعة",
+  جديد: "قيد المراجعة",
   no_replay: "لا يرد",
   "no replay": "لا يرد",
   "no reply": "لا يرد",
@@ -388,9 +393,6 @@ const CUSTOMER_STATUS_LABELS = {
   repeater: "مكرر",
   duplicate: "مكرر",
   مكرر: "مكرر",
-  confirmed: "تم التأكيد",
-  Confirmed: "تم التأكيد",
-  "تم التأكيد": "تم التأكيد",
   shipped: "تم الشحن",
   Shipped: "تم الشحن",
   "تم الشحن": "تم الشحن",

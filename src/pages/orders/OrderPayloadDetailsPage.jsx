@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { updateOrder, updateOrderStatus, sendOrderToBosta } from "../../api/ordersApi";
+import { updateOrder, updateOrderStatus, sendOrderToBosta, refreshCustomerStatus } from "../../api/ordersApi";
 import BostaCityDistrictFields from "../../components/BostaCityDistrictFields";
 import CartProductSelect from "../../components/CartProductSelect";
 import CartProductVariantSelect from "../../components/CartProductVariantSelect";
@@ -34,12 +34,19 @@ import {
 import {
   orderAddress,
   orderCustomer,
+  orderCustomerStatus,
+  orderCustomerStatusDisplayLabel,
   orderDisplayId,
   orderPayment,
   orderPhone,
   orderSecondPhone,
   formatOrderItemVariationProp,
 } from "../../utils/orderDisplay";
+import {
+  isPendingCustomerStatus,
+  pickCustomerStatusFromRefreshResult,
+  resolveCustomerStatusRefreshOrderId,
+} from "../../utils/customerStatusRefresh";
 import { formatApiErrorMessage } from "../../utils/apiErrors";
 import { getActiveUserDisplayName, resolveActorDisplayName } from "../../utils/orderAudit";
 import {
@@ -257,6 +264,53 @@ export default function OrderPayloadDetailsPage() {
   const [sendingToBosta, setSendingToBosta] = useState(false);
   const [bostaSendPhase, setBostaSendPhase] = useState(null);
   const [localStatusHistory, setLocalStatusHistory] = useState([]);
+  const [liveCustomerStatus, setLiveCustomerStatus] = useState(null);
+  const [refreshingCustomerStatus, setRefreshingCustomerStatus] = useState(false);
+
+  useEffect(() => {
+    setLiveCustomerStatus(orderCustomerStatus(order));
+  }, [order]);
+
+  useEffect(() => {
+    if (!order) return undefined;
+
+    const orderId = String(
+      resolveCustomerStatusRefreshOrderId(order) ?? "",
+    ).trim();
+    if (!orderId) return undefined;
+
+    let cancelled = false;
+
+    async function refreshOnOpen() {
+      const showLoading = isPendingCustomerStatus(order);
+      try {
+        if (showLoading) setRefreshingCustomerStatus(true);
+        const result = await refreshCustomerStatus(orderId);
+        if (cancelled) return;
+        if (result?.success === false) return;
+
+        const nextStatus = pickCustomerStatusFromRefreshResult(result);
+        if (nextStatus) {
+          setLiveCustomerStatus(nextStatus);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error(
+            "[refresh-customer-status:details]",
+            error?.response?.data ?? error,
+          );
+        }
+      } finally {
+        if (!cancelled && showLoading) setRefreshingCustomerStatus(false);
+      }
+    }
+
+    refreshOnOpen();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [order]);
 
   useEffect(() => {
     if (!order) return;
@@ -483,6 +537,56 @@ export default function OrderPayloadDetailsPage() {
 
   const orderIdForStatusUpdate =
     order?.id ?? order?.["Order ID"] ?? order?.orderId ?? order?.order_id ?? null;
+
+  const orderIdForCustomerStatusRefresh =
+    resolveCustomerStatusRefreshOrderId(order);
+
+  async function handleRefreshCustomerStatus() {
+    const orderId = String(orderIdForCustomerStatusRefresh ?? "").trim();
+    if (!orderId) {
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: "لا يوجد رقم طلب صالح لتحديث حالة easyconfirm",
+      });
+      return;
+    }
+
+    try {
+      setRefreshingCustomerStatus(true);
+      const result = await refreshCustomerStatus(orderId);
+      if (result?.success === false) {
+        throw new Error(result?.message || "تعذر تحديث حالة easyconfirm");
+      }
+
+      const nextStatus = pickCustomerStatusFromRefreshResult(result);
+      if (nextStatus) {
+        setLiveCustomerStatus(nextStatus);
+      }
+
+      const changed = result?.data?.changed;
+      const message =
+        result?.message ||
+        (changed
+          ? "تم تحديث حالة easyconfirm من EasyOrders"
+          : "تم جلب حالة easyconfirm — لا يوجد تغيير");
+
+      setFeedbackModal({
+        open: true,
+        variant: "success",
+        message,
+      });
+    } catch (error) {
+      console.error("[refresh-customer-status]", error?.response?.data ?? error);
+      setFeedbackModal({
+        open: true,
+        variant: "error",
+        message: formatApiErrorMessage(error, "تعذر تحديث حالة easyconfirm"),
+      });
+    } finally {
+      setRefreshingCustomerStatus(false);
+    }
+  }
 
   const statusButtons = [
     { key: "cancelled", label: "لاغي", bg: "#e74c3c" },
@@ -1023,6 +1127,34 @@ export default function OrderPayloadDetailsPage() {
     جديد: "#7f8c8d",
   };
   const statusBadgeColor = statusColorMap[currentOrderStatus] ?? "#7f8c8d";
+  const easyConfirmStatus =
+    liveCustomerStatus ?? orderCustomerStatus(order);
+  const easyConfirmLabel =
+    orderCustomerStatusDisplayLabel(easyConfirmStatus) || "—";
+  const easyConfirmKey = String(easyConfirmStatus ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ");
+  const easyConfirmTone = (() => {
+    if (easyConfirmKey === "confirmed" || easyConfirmKey === "تم التأكيد") {
+      return "confirmed";
+    }
+    if (
+      easyConfirmKey === "canceled" ||
+      easyConfirmKey === "cancelled" ||
+      easyConfirmKey === "لاغي"
+    ) {
+      return "canceled";
+    }
+    if (easyConfirmKey === "pending") return "pending";
+    if (easyConfirmKey === "failed") return "failed";
+    return easyConfirmStatus ? "default" : "empty";
+  })();
+  const showRefreshCustomerStatus =
+    easyConfirmKey === "pending" || !easyConfirmStatus;
+  const showCustomerStatusLoading =
+    refreshingCustomerStatus && showRefreshCustomerStatus;
 
   return (
     <div className="order-details-page">
@@ -1053,6 +1185,47 @@ export default function OrderPayloadDetailsPage() {
                 ))}
               </select>
             </label>
+            <div className="order-details-page__topbar-mini-field">
+              <span className="order-details-page__topbar-mini-label">easyconfirm</span>
+              <div className="order-details-page__easyconfirm-row">
+                <span
+                  className={`order-details-page__easyconfirm order-details-page__easyconfirm--${easyConfirmTone}`}
+                  title="حالة easyconfirm (غير قابلة للتعديل)"
+                >
+                  {easyConfirmLabel}
+                </span>
+                {showRefreshCustomerStatus ? (
+                  <button
+                    type="button"
+                    className="order-details-page__btn order-details-page__btn--easyconfirm-refresh"
+                    onClick={handleRefreshCustomerStatus}
+                    disabled={
+                      showCustomerStatusLoading || savingOrder || sendingToBosta
+                    }
+                    title="تحديث حالة EasyConfirm"
+                    aria-label="تحديث حالة EasyConfirm"
+                  >
+                    <svg
+                      className={
+                        showCustomerStatusLoading
+                          ? "order-details-page__refresh-icon order-details-page__refresh-icon--spin"
+                          : "order-details-page__refresh-icon"
+                      }
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M21 12a9 9 0 1 1-2.1-5.7" />
+                      <polyline points="21 3 21 9 15 9" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
+            </div>
             <label className="order-details-page__topbar-mini-field">
               <span className="order-details-page__topbar-mini-label">نوع الطلب</span>
               <select
@@ -1398,6 +1571,14 @@ export default function OrderPayloadDetailsPage() {
             <div className="order-details-page__summary-row">
               <span>حالة الطلب</span>
               <strong>{orderStatusUiLabel(currentOrderStatus)}</strong>
+            </div>
+            <div className="order-details-page__summary-row">
+              <span>easyconfirm</span>
+              <strong
+                className={`order-details-page__easyconfirm order-details-page__easyconfirm--${easyConfirmTone}`}
+              >
+                {easyConfirmLabel}
+              </strong>
             </div>
             <div className="order-details-page__summary-row">
               <span>نوع الطلب</span>

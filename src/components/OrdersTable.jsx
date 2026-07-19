@@ -74,6 +74,8 @@ function getStatusPresentation(value) {
     duplicate: { label: "مكرر", tone: "gray" },
     confirmed: { label: "تم التأكيد", tone: "teal" },
     shipped: { label: "تم الشحن", tone: "green" },
+    pending: { label: "pending", tone: "yellow" },
+    failed: { label: "failed", tone: "red" },
     "تم التأكيد": { label: "تم التأكيد", tone: "teal" },
     "تم الشحن": { label: "تم الشحن", tone: "green" },
   };
@@ -108,10 +110,34 @@ function WhatsAppIcon() {
   );
 }
 
+function RefreshIcon({ spinning = false }) {
+  return (
+    <svg
+      className={
+        spinning
+          ? "orders-table__refresh-icon orders-table__refresh-icon--spin"
+          : "orders-table__refresh-icon"
+      }
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.1-5.7" />
+      <polyline points="21 3 21 9 15 9" />
+    </svg>
+  );
+}
+
 export default function OrdersTable({
   orders,
   onViewDetails,
   onCopyCustomer,
+  onRefreshCustomerStatus,
+  refreshingCustomerStatusId,
   highlightOrderId,
 }) {
   const highlightRowRef = useRef(null);
@@ -189,6 +215,14 @@ export default function OrdersTable({
             const customerStatusView = customerStatusRaw
               ? getStatusPresentation(customerStatusRaw)
               : null;
+            const customerStatusKey = normalizeStatus(customerStatusRaw);
+            const isPendingCustomerStatus =
+              customerStatusKey === "pending" || !customerStatusRaw;
+            const showRefreshCustomerStatus =
+              Boolean(onRefreshCustomerStatus) && isPendingCustomerStatus;
+            const isRefreshingCustomerStatus =
+              isPendingCustomerStatus &&
+              refreshingCustomerStatusId === rowKey;
             const typeLabel = orderTypeDisplayLabel(orderType(order));
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
@@ -251,17 +285,31 @@ export default function OrdersTable({
                     ) : null}
                   </div>
                 </td>
-                <td>
-                  {customerStatusView ? (
-                    <span
-                      className={`orders-table__badge orders-table__badge--${customerStatusView.tone}`}
-                      title="Easy Confirm"
-                    >
-                      {customerStatusLabel || customerStatusView.label}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
+                <td onClick={(e) => e.stopPropagation()}>
+                  <div className="orders-table__easyconfirm-cell">
+                    {customerStatusView ? (
+                      <span
+                        className={`orders-table__badge orders-table__badge--${customerStatusView.tone}`}
+                        title="EasyConfirm"
+                      >
+                        {customerStatusLabel || customerStatusView.label}
+                      </span>
+                    ) : (
+                      <span className="orders-table__easyconfirm-empty">—</span>
+                    )}
+                    {showRefreshCustomerStatus ? (
+                      <button
+                        type="button"
+                        className="orders-table__easyconfirm-refresh"
+                        onClick={() => onRefreshCustomerStatus(order, index)}
+                        disabled={isRefreshingCustomerStatus}
+                        title="تحديث حالة EasyConfirm"
+                        aria-label="تحديث حالة EasyConfirm"
+                      >
+                        <RefreshIcon spinning={isRefreshingCustomerStatus} />
+                      </button>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="orders-table__bosta-cell">
                   {bostaStatus ? (

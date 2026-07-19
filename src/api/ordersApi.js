@@ -431,6 +431,17 @@ export async function updateOrder(orderId, payload) {
   return response.data;
 }
 
+/** تحديث حالة العميل من EasyOrders — `POST /api/{system}/orders/:orderId/refresh-customer-status` */
+export async function refreshCustomerStatus(orderId) {
+  const id = String(orderId ?? "").trim();
+  if (!id) throw new Error("رقم الطلب غير صالح");
+  const response = await apiClient.post(
+    dashboardApiPath(`orders/${encodeURIComponent(id)}/refresh-customer-status`),
+    {},
+  );
+  return response.data;
+}
+
 /** إرسال الطلب إلى بوسطة — `POST /api/{system}/orders/:orderId/send-to-bosta` */
 export async function sendOrderToBosta(
   orderId,
