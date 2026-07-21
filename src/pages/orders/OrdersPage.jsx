@@ -215,7 +215,9 @@ export default function OrdersPage() {
     if (!highlightOrderId || loading) return undefined;
     const timer = window.setTimeout(() => setHighlightOrderId(null), 5000);
     return () => window.clearTimeout(timer);
-  }, [highlightOrderId, loading, orders]);
+    // Do not depend on `orders` — background status patches were resetting the timer
+    // and keeping the highlight (and scroll target) alive indefinitely.
+  }, [highlightOrderId, loading]);
 
   useEffect(() => {
     if (loading || pendingCustomerStatusPass === 0) return undefined;

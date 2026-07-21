@@ -143,9 +143,18 @@ export default function OrdersTable({
   highlightOrderId,
 }) {
   const highlightRowRef = useRef(null);
+  const scrolledHighlightIdRef = useRef(null);
 
   useEffect(() => {
-    if (!highlightOrderId || !highlightRowRef.current) return;
+    if (!highlightOrderId) {
+      scrolledHighlightIdRef.current = null;
+      return;
+    }
+    // Scroll once per highlight id — do not re-scroll when `orders` patches
+    // (e.g. background EasyConfirm status refresh), or the list keeps snapping back.
+    if (scrolledHighlightIdRef.current === highlightOrderId) return;
+    if (!highlightRowRef.current) return;
+    scrolledHighlightIdRef.current = highlightOrderId;
     highlightRowRef.current.scrollIntoView({
       block: "center",
       behavior: "smooth",
