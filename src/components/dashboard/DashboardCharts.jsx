@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { filterPointsUpToToday } from "../../utils/dateRange";
 import {
   Bar,
@@ -14,6 +14,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+const ORDER_BREAKDOWN_SERIES = [
+  { key: "value", name: "عدد الطلبات", color: "#22c55e" },
+  { key: "shippedOrders", name: "تم الشحن", color: "#3b82f6" },
+  { key: "successfulOrders", name: "تم التسليم", color: "#8b5cf6" },
+];
 
 export const TREND_METRIC_DEFS = [
   {
@@ -148,6 +154,22 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
     TREND_METRIC_DEFS.find((m) => m.key === metricKey) ?? TREND_METRIC_DEFS[0];
   const showOrderBreakdown = metric.key === "totalOrders";
 
+  const [visibleSeries, setVisibleSeries] = useState({
+    value: true,
+    shippedOrders: true,
+    successfulOrders: true,
+  });
+
+  const toggleSeries = (key) => {
+    setVisibleSeries((prev) => {
+      const nextVisible = !prev[key];
+      const next = { ...prev, [key]: nextVisible };
+      // Keep at least one series visible
+      if (!Object.values(next).some(Boolean)) return prev;
+      return next;
+    });
+  };
+
   const chartData = useMemo(() => {
     const list = filterPointsUpToToday(points);
     return list.map((p) => {
@@ -197,6 +219,35 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
           </select>
         </label>
       </header>
+      {showOrderBreakdown ? (
+        <div
+          className="dashboard-trend-chart__series-toggles"
+          role="group"
+          aria-label="إظهار أو إخفاء خطوط الرسم البياني"
+        >
+          {ORDER_BREAKDOWN_SERIES.map((series) => {
+            const isVisible = visibleSeries[series.key];
+            return (
+              <button
+                key={series.key}
+                type="button"
+                className={`dashboard-trend-chart__series-toggle${
+                  isVisible ? " is-active" : ""
+                }`}
+                aria-pressed={isVisible}
+                onClick={() => toggleSeries(series.key)}
+              >
+                <span
+                  className="dashboard-trend-chart__series-swatch"
+                  style={{ background: series.color }}
+                  aria-hidden="true"
+                />
+                <span>{series.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="dashboard-recharts-wrap dashboard-trend-chart__wrap">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
@@ -246,17 +297,19 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
                 direction: "rtl",
               }}
             />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke={metric.accent}
-              strokeWidth={2.5}
-              dot={{ r: 3, fill: metric.accent }}
-              activeDot={{ r: 5 }}
-              connectNulls={false}
-              name={metric.title}
-            />
-            {showOrderBreakdown ? (
+            {(!showOrderBreakdown || visibleSeries.value) && (
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={metric.accent}
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: metric.accent }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                name={metric.title}
+              />
+            )}
+            {showOrderBreakdown && visibleSeries.shippedOrders ? (
               <Line
                 type="monotone"
                 dataKey="shippedOrders"
@@ -268,7 +321,7 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
                 name="تم الشحن"
               />
             ) : null}
-            {showOrderBreakdown ? (
+            {showOrderBreakdown && visibleSeries.successfulOrders ? (
               <Line
                 type="monotone"
                 dataKey="successfulOrders"

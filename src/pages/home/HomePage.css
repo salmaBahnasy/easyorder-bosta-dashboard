@@ -247,6 +247,56 @@
   background: #fff;
 }
 
+.dashboard-trend-chart__series-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.dashboard-trend-chart__series-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d8deec;
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.dashboard-trend-chart__series-toggle:hover {
+  border-color: #b6c0d4;
+  background: #f8fafc;
+}
+
+.dashboard-trend-chart__series-toggle.is-active {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.dashboard-trend-chart__series-toggle:not(.is-active) {
+  opacity: 0.55;
+}
+
+.dashboard-trend-chart__series-toggle:not(.is-active)
+  .dashboard-trend-chart__series-swatch {
+  opacity: 0.45;
+}
+
+.dashboard-trend-chart__series-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .dashboard-trend-chart__wrap {
   min-height: 320px;
   width: 100%;
