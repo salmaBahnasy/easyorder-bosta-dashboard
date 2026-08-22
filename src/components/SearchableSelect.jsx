@@ -32,6 +32,7 @@ export default function SearchableSelect({
   onSearchChange,
   panelFixed = false,
   hideSearch = false,
+  multiple = false,
 }) {
   const listId = useId();
   const rootRef = useRef(null);
@@ -41,10 +42,24 @@ export default function SearchableSelect({
   const [search, setSearch] = useState("");
   const [panelStyle, setPanelStyle] = useState(null);
 
-  const selected = useMemo(
-    () => options.find((opt) => getOptionValue(opt) === value) ?? null,
-    [options, value, getOptionValue],
-  );
+  const selectedValues = useMemo(() => {
+    if (multiple) {
+      return (Array.isArray(value) ? value : [])
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean);
+    }
+    const single = String(value ?? "").trim();
+    return single ? [single] : [];
+  }, [multiple, value]);
+
+  const selected = useMemo(() => {
+    if (multiple) {
+      return options.filter((opt) =>
+        selectedValues.includes(String(getOptionValue(opt))),
+      );
+    }
+    return options.find((opt) => getOptionValue(opt) === value) ?? null;
+  }, [options, value, getOptionValue, multiple, selectedValues]);
 
   const filteredOptions = useMemo(() => {
     if (serverSideSearch) return options;
@@ -133,9 +148,24 @@ export default function SearchableSelect({
   }
 
   function handleSelect(option) {
-    onChange(getOptionValue(option), option);
+    const nextValue = getOptionValue(option);
+    if (multiple) {
+      const id = String(nextValue ?? "").trim();
+      if (!id) return;
+      const next = selectedValues.includes(id)
+        ? selectedValues.filter((item) => item !== id)
+        : [...selectedValues, id];
+      onChange(next, option);
+      return;
+    }
+    onChange(nextValue, option);
     setOpen(false);
     setSearch("");
+  }
+
+  function handleClearMultiple() {
+    if (!multiple) return;
+    onChange([]);
   }
 
   function handleToggle() {
@@ -154,11 +184,22 @@ export default function SearchableSelect({
     event.stopPropagation();
   }
 
-  const displayText = selected
-    ? getOptionLabel(selected)
-    : loading
-      ? loadingText
-      : placeholder;
+  const displayText = (() => {
+    if (loading) return loadingText;
+    if (multiple) {
+      if (selectedValues.length === 0) return placeholder;
+      if (selectedValues.length === 1) {
+        const only = Array.isArray(selected) ? selected[0] : null;
+        return only ? getOptionLabel(only) : placeholder;
+      }
+      return `${selectedValues.length} منتجات`;
+    }
+    return selected ? getOptionLabel(selected) : placeholder;
+  })();
+
+  const hasSelection = multiple
+    ? selectedValues.length > 0
+    : Boolean(selected);
 
   const panelNode = open ? (
     <div
@@ -205,6 +246,7 @@ export default function SearchableSelect({
         id={listId}
         className="searchable-select__list"
         role="listbox"
+        aria-multiselectable={multiple || undefined}
         dir="rtl"
       >
         {loading ? (
@@ -214,7 +256,7 @@ export default function SearchableSelect({
         ) : (
           filteredOptions.map((option, index) => {
             const optValue = getOptionValue(option);
-            const isSelected = optValue === value;
+            const isSelected = selectedValues.includes(String(optValue));
             return (
               <li
                 key={optValue || `${getOptionLabel(option)}-${index}`}
@@ -224,16 +266,33 @@ export default function SearchableSelect({
                   type="button"
                   role="option"
                   aria-selected={isSelected}
-                  className={`searchable-select__option ${isSelected ? "searchable-select__option--selected" : ""}`}
+                  className={`searchable-select__option ${multiple ? "searchable-select__option--multi" : ""} ${isSelected ? "searchable-select__option--selected" : ""}`}
                   onClick={() => handleSelect(option)}
                 >
-                  {getOptionLabel(option)}
+                  {multiple ? (
+                    <span
+                      className={`searchable-select__check ${isSelected ? "is-checked" : ""}`}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <span>{getOptionLabel(option)}</span>
                 </button>
               </li>
             );
           })
         )}
       </ul>
+      {multiple && selectedValues.length > 0 ? (
+        <div className="searchable-select__footer">
+          <button
+            type="button"
+            className="searchable-select__clear"
+            onClick={handleClearMultiple}
+          >
+            مسح الاختيار
+          </button>
+        </div>
+      ) : null}
     </div>
   ) : null;
 
@@ -252,8 +311,16 @@ export default function SearchableSelect({
         aria-controls={listId}
       >
         <span
-          className={`searchable-select__trigger-text ${!selected ? "searchable-select__trigger-text--placeholder" : ""}`}
-          title={selected ? getOptionLabel(selected) : undefined}
+          className={`searchable-select__trigger-text ${!hasSelection ? "searchable-select__trigger-text--placeholder" : ""}`}
+          title={
+            multiple
+              ? Array.isArray(selected) && selected.length
+                ? selected.map(getOptionLabel).join("، ")
+                : undefined
+              : selected
+                ? getOptionLabel(selected)
+                : undefined
+          }
         >
           {displayText}
         </span>

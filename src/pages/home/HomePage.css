@@ -52,6 +52,19 @@
   max-width: min(340px, 100%);
 }
 
+.dashboard-product-multiselect {
+  min-width: 220px;
+  max-width: min(360px, 100%);
+}
+
+.dashboard-product-multiselect .searchable-select__trigger {
+  border: 1px solid #d9dfec;
+  border-radius: 10px;
+  height: 40px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
 .dashboard-api-data {
   margin-bottom: 16px;
   padding: 16px;
@@ -223,10 +236,26 @@
 
 .dashboard-trend-chart__header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: 16px 20px;
   flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.dashboard-trend-chart__heading {
+  min-width: 180px;
+}
+
+.dashboard-trend-chart__heading p {
+  margin-bottom: 0;
+}
+
+.dashboard-trend-chart__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
 }
 
 .dashboard-trend-chart__metric-select {
@@ -238,20 +267,26 @@
 }
 
 .dashboard-trend-chart__metric-select select {
-  min-width: 200px;
+  box-sizing: border-box;
+  width: 168px;
+  min-width: 168px;
+  height: 40px;
   border: 1px solid #d8deec;
   border-radius: 10px;
-  padding: 8px 12px;
+  padding: 0 12px;
   font-size: 13px;
+  font-weight: 600;
   font-family: inherit;
+  color: #1e293b;
   background: #fff;
 }
 
 .dashboard-trend-chart__series-toggles {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  padding: 0 20px 12px;
+  padding: 10px 0 14px;
 }
 
 .dashboard-trend-chart__series-toggle {
@@ -259,7 +294,7 @@
   align-items: center;
   gap: 8px;
   border: 1px solid #d8deec;
-  border-radius: 10px;
+  border-radius: 999px;
   padding: 6px 12px;
   background: #fff;
   color: #475569;
@@ -290,6 +325,17 @@
   opacity: 0.45;
 }
 
+.dashboard-trend-chart__series-pct {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dashboard-trend-chart__series-toggle.is-active
+  .dashboard-trend-chart__series-pct {
+  color: #334155;
+}
+
 .dashboard-trend-chart__series-swatch {
   width: 10px;
   height: 10px;
@@ -318,6 +364,31 @@
   align-items: flex-end;
 }
 
+.dashboard-trend-chart__export-btn {
+  box-sizing: border-box;
+  border: 1px solid #5b6fb6;
+  border-radius: 10px;
+  height: 40px;
+  padding: 0 16px;
+  background: #5b6fb6;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dashboard-trend-chart__export-btn:hover:not(:disabled) {
+  background: #4b5ea3;
+  border-color: #4b5ea3;
+}
+
+.dashboard-trend-chart__export-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .dashboard-product-sales-chart__summary {
   display: flex;
   flex-wrap: wrap;
@@ -332,13 +403,8 @@
   font-weight: 700;
 }
 
-.dashboard-charts-row--trend-pair .dashboard-trend-chart__metric-select select {
-  min-width: 0;
-  width: 100%;
-}
-
-.dashboard-charts-row--trend-pair .dashboard-product-sales-chart__controls {
-  width: 100%;
+.dashboard-charts-row--trend-pair .dashboard-trend-chart__toolbar {
+  margin-inline-start: auto;
 }
 
 .dashboard-order-costs {

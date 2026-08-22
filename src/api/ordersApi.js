@@ -1,5 +1,5 @@
 import axios from "axios";
-import { toApiQueryDate, normalizeApiDateParams, normalizeDateInput } from "../utils/dateRange";
+import { toApiQueryDate, normalizeApiDateParams, normalizeDateInput, egyptTodayYmd } from "../utils/dateRange";
 import { getOrderAuditFields } from "../utils/orderAudit";
 import {
   getDashboardApiPrefix,
@@ -533,6 +533,50 @@ export async function getOrdersStatsTrend(params = {}) {
     params: cleanApiParams(params),
   });
   return response.data;
+}
+
+function trendExportFallbackFilename(period) {
+  const key = String(period ?? "daily").trim().toLowerCase();
+  const slug =
+    key === "weekly" ? "week" : key === "monthly" ? "month" : "day";
+  return `orders-trend-${slug}-${egyptTodayYmd()}.xlsx`;
+}
+
+/** Trend chart Excel — `GET /api/{system}/orders/stats/trend/export` */
+export async function exportOrdersStatsTrend(params = {}) {
+  const cleaned = cleanApiParams(params);
+
+  try {
+    const response = await apiClient.get(
+      dashboardApiPath("orders/stats/trend/export"),
+      {
+        params: cleaned,
+        responseType: "blob",
+        ...authorizedRequestConfig(),
+      },
+    );
+
+    const contentType = String(response.headers?.["content-type"] ?? "");
+    if (contentType.includes("application/json")) {
+      const message = await readBlobErrorMessage(response.data);
+      throw new Error(message ?? "تعذر تصدير اتجاه الأداء");
+    }
+
+    return {
+      blob: response.data,
+      filename: parseExportFilename(
+        response.headers?.["content-disposition"],
+        trendExportFallbackFilename(cleaned.period),
+      ),
+    };
+  } catch (error) {
+    const blob = error?.response?.data;
+    if (blob instanceof Blob) {
+      const message = await readBlobErrorMessage(blob);
+      if (message) throw new Error(message);
+    }
+    throw error;
+  }
 }
 
 /** Product sales chart — `GET /api/{system}/charts/product-sales` */

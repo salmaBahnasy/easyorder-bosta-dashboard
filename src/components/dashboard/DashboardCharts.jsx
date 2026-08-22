@@ -5,6 +5,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Line,
   LineChart,
   Pie,
@@ -85,24 +86,62 @@ export const TREND_METRIC_DEFS = [
   },
 ];
 
-function formatTrendAxisDate(dateStr) {
+function formatTrendAxisDate(dateStr, period = "daily") {
   if (!dateStr) return "";
   const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
   if (Number.isNaN(d.getTime())) return String(dateStr);
+  if (period === "monthly") {
+    return `${d.getMonth() + 1}/${d.getFullYear()}`;
+  }
   const day = d.getDate();
   const month = d.getMonth() + 1;
   return `${day}/${month}`;
 }
 
-function formatTrendTooltipDate(dateStr) {
+function formatTrendTooltipDate(dateStr, period = "daily") {
   if (!dateStr) return "";
   const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
   if (Number.isNaN(d.getTime())) return String(dateStr);
+  if (period === "monthly") {
+    return new Intl.DateTimeFormat("ar-EG", {
+      month: "long",
+      year: "numeric",
+    }).format(d);
+  }
+  if (period === "weekly") {
+    return `أسبوع ${new Intl.DateTimeFormat("ar-EG", {
+      day: "numeric",
+      month: "short",
+    }).format(d)}`;
+  }
   return new Intl.DateTimeFormat("ar-EG", {
     weekday: "short",
     day: "numeric",
     month: "short",
   }).format(d);
+}
+
+function toChartNumber(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatCountWithShare(count, total) {
+  const num = Number(count);
+  if (!Number.isFinite(num)) return "—";
+  const shown = num.toLocaleString("ar-EG");
+  const base = Number(total);
+  if (!Number.isFinite(base) || base <= 0) return shown;
+  const pct = Math.round((num / base) * 100);
+  return `${shown} (${pct.toLocaleString("ar-EG")}٪)`;
+}
+
+function sharePercent(count, total) {
+  const num = Number(count);
+  const base = Number(total);
+  if (!Number.isFinite(num) || !Number.isFinite(base) || base <= 0) return null;
+  return Math.round((num / base) * 100);
 }
 
 function formatTrendYAxisTick(value) {
@@ -111,6 +150,41 @@ function formatTrendYAxisTick(value) {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}م`;
   if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(1)}ك`;
   return n.toLocaleString("ar-EG", { maximumFractionDigits: 0 });
+}
+
+function TrendShareLabel({ x, y, value, fill, position = "top" }) {
+  if (x == null || y == null) return null;
+  const text = String(value ?? "").trim();
+  if (!text || text === "—") return null;
+  const w = 78;
+  const h = 18;
+  const top = position === "bottom" ? y + 8 : y - h - 2;
+  return (
+    <foreignObject
+      x={x - w / 2}
+      y={top}
+      width={w}
+      height={h}
+      style={{ overflow: "visible" }}
+    >
+      <div
+        xmlns="http://www.w3.org/1999/xhtml"
+        dir="rtl"
+        lang="ar"
+        style={{
+          textAlign: "center",
+          fontSize: 11,
+          fontWeight: 700,
+          color: fill,
+          lineHeight: "18px",
+          fontFamily: '"Cairo", "Segoe UI", Tahoma, sans-serif',
+          whiteSpace: "nowrap",
+        }}
+      >
+        {text}
+      </div>
+    </foreignObject>
+  );
 }
 
 /** محور سفلي بعناوين عربية واضحة دون تداخل (foreignObject + RTL). */
@@ -149,7 +223,16 @@ function TrendXAxisTick({ x, y, payload }) {
   );
 }
 
-export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
+export function OrdersTrendLineChart({
+  points,
+  metricKey,
+  onMetricChange,
+  period = "daily",
+  onPeriodChange,
+  periodOptions = [],
+  onExport,
+  exporting = false,
+}) {
   const metric =
     TREND_METRIC_DEFS.find((m) => m.key === metricKey) ?? TREND_METRIC_DEFS[0];
   const showOrderBreakdown = metric.key === "totalOrders";
@@ -174,21 +257,39 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
     const list = filterPointsUpToToday(points);
     return list.map((p) => {
       const raw = p?.[metric.key];
+      const totalOrders = toChartNumber(p?.totalOrders ?? p?.[metric.key]);
+      const shippedOrders = toChartNumber(p?.shippedOrders);
+      const successfulOrders = toChartNumber(p?.successfulOrders);
       return {
         date: p?.date,
-        dateLabel: formatTrendAxisDate(p?.date),
+        dateLabel: formatTrendAxisDate(p?.date, period),
         value: raw == null || raw === "" ? null : Number(raw),
-        shippedOrders:
-          p?.shippedOrders == null || p?.shippedOrders === ""
-            ? null
-            : Number(p.shippedOrders),
-        successfulOrders:
-          p?.successfulOrders == null || p?.successfulOrders === ""
-            ? null
-            : Number(p.successfulOrders),
+        totalOrders,
+        shippedOrders,
+        successfulOrders,
+        shippedLabel: formatCountWithShare(shippedOrders, totalOrders),
+        successfulLabel: formatCountWithShare(successfulOrders, totalOrders),
       };
     });
-  }, [points, metric.key]);
+  }, [points, metric.key, period]);
+
+  const breakdownShares = useMemo(() => {
+    const totals = chartData.reduce(
+      (acc, row) => {
+        acc.orders += Number(row.totalOrders ?? row.value) || 0;
+        acc.shipped += Number(row.shippedOrders) || 0;
+        acc.successful += Number(row.successfulOrders) || 0;
+        return acc;
+      },
+      { orders: 0, shipped: 0, successful: 0 },
+    );
+    return {
+      shipped: sharePercent(totals.shipped, totals.orders),
+      successful: sharePercent(totals.successful, totals.orders),
+    };
+  }, [chartData]);
+
+  const showPointLabels = showOrderBreakdown && chartData.length <= 16;
 
   const xTickInterval = useMemo(() => {
     const n = chartData.length;
@@ -200,24 +301,50 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
   return (
     <section className="dashboard-chart-card dashboard-chart-card--panel dashboard-trend-chart">
       <header className="dashboard-chart-card__header dashboard-trend-chart__header">
-        <div>
+        <div className="dashboard-trend-chart__heading">
           <h3>اتجاه الأداء</h3>
           <p>تطور المؤشر خلال الفترة المحددة</p>
         </div>
-        <label className="dashboard-trend-chart__metric-select">
-          <span>المؤشر</span>
-          <select
-            value={metric.key}
-            onChange={(e) => onMetricChange(e.target.value)}
-            aria-label="اختيار مؤشر الرسم البياني"
-          >
-            {TREND_METRIC_DEFS.map((m) => (
-              <option key={m.key} value={m.key}>
-                {m.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="dashboard-trend-chart__toolbar">
+          <label className="dashboard-trend-chart__metric-select">
+            <span>الفترة</span>
+            <select
+              value={period}
+              onChange={(e) => onPeriodChange?.(e.target.value)}
+              aria-label="تصفية اتجاه الأداء يومي أو أسبوعي أو شهري"
+            >
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="dashboard-trend-chart__metric-select">
+            <span>المؤشر</span>
+            <select
+              value={metric.key}
+              onChange={(e) => onMetricChange(e.target.value)}
+              aria-label="اختيار مؤشر الرسم البياني"
+            >
+              {TREND_METRIC_DEFS.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {onExport ? (
+            <button
+              type="button"
+              className="dashboard-trend-chart__export-btn"
+              onClick={onExport}
+              disabled={exporting}
+            >
+              {exporting ? "جاري التصدير..." : "تصدير Excel"}
+            </button>
+          ) : null}
+        </div>
       </header>
       {showOrderBreakdown ? (
         <div
@@ -227,6 +354,12 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
         >
           {ORDER_BREAKDOWN_SERIES.map((series) => {
             const isVisible = visibleSeries[series.key];
+            const share =
+              series.key === "shippedOrders"
+                ? breakdownShares.shipped
+                : series.key === "successfulOrders"
+                  ? breakdownShares.successful
+                  : null;
             return (
               <button
                 key={series.key}
@@ -243,6 +376,11 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
                   aria-hidden="true"
                 />
                 <span>{series.name}</span>
+                {share != null ? (
+                  <span className="dashboard-trend-chart__series-pct">
+                    {share.toLocaleString("ar-EG")}٪
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -252,7 +390,12 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
-            margin={{ top: 16, right: 20, left: 4, bottom: 52 }}
+            margin={{
+              top: showPointLabels ? 28 : 16,
+              right: 20,
+              left: 4,
+              bottom: showPointLabels ? 64 : 52,
+            }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -278,17 +421,19 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
             <Tooltip
               formatter={(v, _name, item) => {
                 const key = item?.dataKey;
+                const row = item?.payload;
+                const total = row?.totalOrders ?? row?.value;
                 if (showOrderBreakdown && key === "shippedOrders") {
-                  return [Number(v ?? 0).toLocaleString("ar-EG"), "تم الشحن"];
+                  return [formatCountWithShare(v, total), "تم الشحن"];
                 }
                 if (showOrderBreakdown && key === "successfulOrders") {
-                  return [Number(v ?? 0).toLocaleString("ar-EG"), "تم التسليم"];
+                  return [formatCountWithShare(v, total), "تم التسليم"];
                 }
                 return metric.formatTooltip(v);
               }}
               labelFormatter={(_l, payload) => {
                 const row = payload?.[0]?.payload;
-                return row?.date ? formatTrendTooltipDate(row.date) : "";
+                return row?.date ? formatTrendTooltipDate(row.date, period) : "";
               }}
               contentStyle={{
                 borderRadius: 10,
@@ -319,7 +464,16 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
                 activeDot={{ r: 5 }}
                 connectNulls={false}
                 name="تم الشحن"
-              />
+              >
+                {showPointLabels ? (
+                  <LabelList
+                    dataKey="shippedLabel"
+                    content={(props) => (
+                      <TrendShareLabel {...props} fill="#2563eb" position="top" />
+                    )}
+                  />
+                ) : null}
+              </Line>
             ) : null}
             {showOrderBreakdown && visibleSeries.successfulOrders ? (
               <Line
@@ -331,7 +485,20 @@ export function OrdersTrendLineChart({ points, metricKey, onMetricChange }) {
                 activeDot={{ r: 5 }}
                 connectNulls={false}
                 name="تم التسليم"
-              />
+              >
+                {showPointLabels ? (
+                  <LabelList
+                    dataKey="successfulLabel"
+                    content={(props) => (
+                      <TrendShareLabel
+                        {...props}
+                        fill="#7c3aed"
+                        position="bottom"
+                      />
+                    )}
+                  />
+                ) : null}
+              </Line>
             ) : null}
           </LineChart>
         </ResponsiveContainer>

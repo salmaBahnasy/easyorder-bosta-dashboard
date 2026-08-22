@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  downloadOrdersExportFile,
+  exportOrdersStatsTrend,
   getEmployees,
   getOrderCostChart,
   saveOrderCostDay,
@@ -29,6 +31,7 @@ import {
   TrendChartSkeleton,
 } from "../../components/dashboard/DashboardStatsSkeleton";
 import "./HomePage.css";
+import SearchableSelect from "../../components/SearchableSelect";
 import {
   getProductFilterId,
   getProductListLabel,
@@ -40,18 +43,32 @@ import {
   filterPointsUpToToday,
 } from "../../utils/dateRange";
 
+const TREND_PERIOD_OPTIONS = [
+  { value: "daily", label: "يومي" },
+  { value: "weekly", label: "أسبوعي" },
+  { value: "monthly", label: "شهري" },
+];
+
+function normalizeProductIds(productIds) {
+  const list = Array.isArray(productIds)
+    ? productIds
+    : String(productIds ?? "")
+        .split(",");
+  return [...new Set(list.map((id) => String(id ?? "").trim()).filter(Boolean))];
+}
+
 function buildTrendQueryParams({
   dateRange,
   dateFrom,
   dateTo,
   employeeId,
   employees,
-  product_id,
+  product_ids,
 }) {
   const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
   Object.assign(params, resolveEmployeeOrderFilterParams(employees, employeeId));
-  const pid = typeof product_id === "string" ? product_id.trim() : "";
-  if (pid) params.product_id = pid;
+  const ids = normalizeProductIds(product_ids);
+  if (ids.length) params.product_ids = ids.join(",");
   return params;
 }
 
@@ -158,6 +175,8 @@ export default function HomePage() {
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingProductSales, setLoadingProductSales] = useState(true);
   const [chartMetric, setChartMetric] = useState("totalOrders");
+  const [trendPeriod, setTrendPeriod] = useState("daily");
+  const [exportingTrend, setExportingTrend] = useState(false);
   const [productSalesProductId, setProductSalesProductId] = useState("");
   const [productSalesMetric, setProductSalesMetric] = useState("totalUnits");
   const [productSalesGranularity, setProductSalesGranularity] = useState("day");
@@ -168,7 +187,7 @@ export default function HomePage() {
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
-  const [productFilter, setProductFilter] = useState("");
+  const [productFilter, setProductFilter] = useState([]);
   const [orderCostsExpense, setOrderCostsExpense] = useState("");
   const [orderCostsSaveDate, setOrderCostsSaveDate] = useState(() => egyptTodayYmd());
   const [orderCostsError, setOrderCostsError] = useState("");
@@ -187,7 +206,7 @@ export default function HomePage() {
         dateTo,
         employeeId: String(employeeFilter ?? "").trim(),
         employees,
-        product_id: productFilter,
+        product_ids: productFilter,
       }),
     [dateRange, dateFrom, dateTo, employeeFilter, employees, productFilter],
   );
@@ -215,6 +234,28 @@ export default function HomePage() {
   }, []);
 
   const dashboardLoadGenRef = useRef(0);
+  const trendLoadGenRef = useRef(0);
+
+  const loadTrendChart = useCallback(() => {
+    const query = { ...buildDashboardQuery(), period: trendPeriod };
+    const gen = trendLoadGenRef.current + 1;
+    trendLoadGenRef.current = gen;
+    setLoadingTrend(true);
+
+    getOrdersStatsTrend(query)
+      .then((trendRes) => {
+        if (trendLoadGenRef.current !== gen) return;
+        setTrendChart(normalizeTrendChart(trendRes));
+      })
+      .catch((error) => {
+        console.log(error);
+        if (trendLoadGenRef.current !== gen) return;
+        setTrendChart(null);
+      })
+      .finally(() => {
+        if (trendLoadGenRef.current === gen) setLoadingTrend(false);
+      });
+  }, [buildDashboardQuery, trendPeriod]);
 
   const loadDashboardSections = useCallback(() => {
     const query = buildDashboardQuery();
@@ -222,23 +263,8 @@ export default function HomePage() {
     const gen = dashboardLoadGenRef.current + 1;
     dashboardLoadGenRef.current = gen;
 
-    setLoadingTrend(true);
     setLoadingStats(true);
     setLoadingProductSales(true);
-
-    getOrdersStatsTrend(query)
-      .then((trendRes) => {
-        if (dashboardLoadGenRef.current !== gen) return;
-        setTrendChart(normalizeTrendChart(trendRes));
-      })
-      .catch((error) => {
-        console.log(error);
-        if (dashboardLoadGenRef.current !== gen) return;
-        setTrendChart(null);
-      })
-      .finally(() => {
-        if (dashboardLoadGenRef.current === gen) setLoadingTrend(false);
-      });
 
     getOrdersStats(query)
       .then((statsRes) => {
@@ -400,12 +426,40 @@ export default function HomePage() {
   }, [loadDashboardSections]);
 
   useEffect(() => {
+    loadTrendChart();
+    return () => {
+      trendLoadGenRef.current += 1;
+    };
+  }, [loadTrendChart]);
+
+  useEffect(() => {
     fetchOrderCostChart();
   }, [fetchOrderCostChart]);
 
   function handleRefreshStats() {
     loadDashboardSections();
+    loadTrendChart();
     fetchOrderCostChart();
+  }
+
+  async function handleExportTrend() {
+    try {
+      setExportingTrend(true);
+      const result = await exportOrdersStatsTrend({
+        ...buildDashboardQuery(),
+        period: trendPeriod,
+      });
+      downloadOrdersExportFile(result);
+    } catch (error) {
+      console.log(error);
+      const message =
+        error?.response?.data?.message ??
+        error?.message ??
+        "تعذر تصدير اتجاه الأداء";
+      alert(message);
+    } finally {
+      setExportingTrend(false);
+    }
   }
 
   const summary = trendChart?.summary ?? {};
@@ -476,23 +530,21 @@ export default function HomePage() {
               );
             })}
           </select>
-          <select
-            className="dashboard-select dashboard-select--product"
+          <SearchableSelect
+            className="dashboard-select--product dashboard-product-multiselect"
+            multiple
             value={productFilter}
-            onChange={(e) => setProductFilter(e.target.value)}
+            onChange={(next) => setProductFilter(normalizeProductIds(next))}
+            options={productOptions}
+            getOptionValue={(option) => option.id}
+            getOptionLabel={(option) => option.label}
+            placeholder={productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"}
+            searchPlaceholder="ابحث عن منتج..."
             disabled={productsLoading}
-            aria-label="تصفية حسب المنتج"
-            title="تصفية حسب المنتج"
-          >
-            <option value="">
-              {productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"}
-            </option>
-            {productOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+            loading={productsLoading}
+            emptyText="لا توجد منتجات"
+            panelFixed
+          />
 
           <input
             type="date"
@@ -547,6 +599,11 @@ export default function HomePage() {
                   points={trendPoints}
                   metricKey={chartMetric}
                   onMetricChange={setChartMetric}
+                  period={trendPeriod}
+                  onPeriodChange={setTrendPeriod}
+                  periodOptions={TREND_PERIOD_OPTIONS}
+                  onExport={handleExportTrend}
+                  exporting={exportingTrend}
                 />
               </section>
             </>
