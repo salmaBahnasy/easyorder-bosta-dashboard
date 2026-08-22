@@ -236,8 +236,10 @@ export default function OrdersTable({
               ? getStatusPresentation(customerStatusRaw)
               : null;
             const customerStatusKey = normalizeStatus(customerStatusRaw);
+            const platform = orderPlatform(order);
             const isPendingCustomerStatus =
               !isManualSystemOrder(order) &&
+              platform !== "shopify" &&
               (customerStatusKey === "pending" || !customerStatusRaw);
             const showRefreshCustomerStatus =
               Boolean(onRefreshCustomerStatus) &&
@@ -250,7 +252,6 @@ export default function OrdersTable({
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
             const bostaStatus = orderBostaStatus(order);
-            const platform = orderPlatform(order);
             const showShippingWithStatus =
               isShippedOrderStatus(order) && shipLabel;
             const isHighlighted =

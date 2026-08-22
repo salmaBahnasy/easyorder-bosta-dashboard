@@ -1,4 +1,4 @@
-import { isManualSystemOrder, orderCustomerStatus } from "./orderDisplay";
+import { isManualSystemOrder, orderCustomerStatus, orderPlatform } from "./orderDisplay";
 
 export function resolveCustomerStatusRefreshOrderId(order) {
   return (
@@ -12,10 +12,11 @@ export function resolveCustomerStatusRefreshOrderId(order) {
   );
 }
 
-/** هل ينفع نحدّث الحالة من EasyOrders؟ (لا للطلبات اليدوية) */
+/** هل ينفع نحدّث الحالة من EasyOrders؟ (لا للطلبات اليدوية ولا Shopify) */
 export function canRefreshCustomerStatus(order) {
   if (!order) return false;
   if (isManualSystemOrder(order)) return false;
+  if (orderPlatform(order) === "shopify") return false;
   return Boolean(String(resolveCustomerStatusRefreshOrderId(order) ?? "").trim());
 }
 
@@ -31,7 +32,8 @@ export function isPendingCustomerStatus(orderOrStatus) {
   if (
     orderOrStatus &&
     typeof orderOrStatus === "object" &&
-    isManualSystemOrder(orderOrStatus)
+    (isManualSystemOrder(orderOrStatus) ||
+      orderPlatform(orderOrStatus) === "shopify")
   ) {
     return false;
   }

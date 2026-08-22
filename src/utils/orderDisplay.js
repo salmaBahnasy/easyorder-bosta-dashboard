@@ -442,6 +442,9 @@ export function orderCustomerStatus(order) {
   // الطلبات اليدوية من السيستم تعتبر confirmed دائمًا
   if (isManualSystemOrder(order)) return "confirmed";
 
+  // طلبات Shopify مالهاش EasyConfirm
+  if (orderPlatform(order) === "shopify") return null;
+
   const raw =
     order.customerStatus ??
     order.customer_status ??
