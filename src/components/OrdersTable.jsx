@@ -12,6 +12,7 @@ import {
   orderRowKey,
   orderShippingStatus,
   orderBostaStatus,
+  orderPlatform,
   orderStatus,
   orderType,
   orderTypeDisplayLabel,
@@ -50,6 +51,13 @@ function shippingStatusDisplayLabel(code) {
     failed: "فشل",
   };
   return map[key] ?? String(code);
+}
+
+function platformBadgeTone(platform) {
+  if (platform === "shopify") return "green";
+  if (platform === "easyorder") return "blue";
+  if (platform === "manual") return "gray";
+  return "gray";
 }
 
 function shippingStatusBadgeTone(code) {
@@ -200,6 +208,7 @@ export default function OrdersTable({
         <thead>
           <tr>
             <th>رقم الطلب</th>
+            <th>Platform</th>
             <th>العميل</th>
             <th>الموبايل</th>
             <th>حالة الطلب</th>
@@ -241,6 +250,7 @@ export default function OrdersTable({
             const shipCode = orderShippingStatus(order);
             const shipLabel = shippingStatusDisplayLabel(shipCode);
             const bostaStatus = orderBostaStatus(order);
+            const platform = orderPlatform(order);
             const showShippingWithStatus =
               isShippedOrderStatus(order) && shipLabel;
             const isHighlighted =
@@ -269,6 +279,14 @@ export default function OrdersTable({
                       </span>
                     ) : null}
                   </div>
+                </td>
+                <td>
+                  <span
+                    className={`orders-table__badge orders-table__badge--${platformBadgeTone(platform)}`}
+                    title="Platform"
+                  >
+                    {platform}
+                  </span>
                 </td>
                 <td>{orderCustomer(order)}</td>
                 <td>{orderPhone(order)}</td>

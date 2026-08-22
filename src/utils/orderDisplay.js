@@ -358,6 +358,24 @@ export function orderStatus(order) {
   );
 }
 
+function orderIdentityValues(order) {
+  if (!order || typeof order !== "object") return [];
+  return [
+    order.id,
+    order.sourceOrderId,
+    order.source_order_id,
+    order["Order ID"],
+    order.orderId,
+    order.order_id,
+  ];
+}
+
+function hasManualIdPrefix(order) {
+  return orderIdentityValues(order).some((value) =>
+    /^manual/i.test(String(value ?? "").trim()),
+  );
+}
+
 /** طلبات منشأة يدويًا من الداشبورد (مش من EasyOrders). */
 export function isManualSystemOrder(order) {
   if (!order || typeof order !== "object") return false;
@@ -370,18 +388,51 @@ export function isManualSystemOrder(order) {
     return true;
   }
 
-  const ids = [
-    order.id,
-    order.sourceOrderId,
-    order.source_order_id,
-    order["Order ID"],
-    order.orderId,
-    order.order_id,
+  return hasManualIdPrefix(order);
+}
+
+const KNOWN_PLATFORMS = new Set(["shopify", "easyorder", "manual"]);
+
+function readRawDataObject(order) {
+  let rd = order?.raw_data;
+  if (typeof rd === "string") {
+    try {
+      rd = JSON.parse(rd);
+    } catch {
+      rd = null;
+    }
+  }
+  return rd && typeof rd === "object" ? rd : null;
+}
+
+/** منصة الطلب: shopify / easyorder / manual */
+export function orderPlatform(order) {
+  if (!order || typeof order !== "object") return null;
+
+  if (hasManualIdPrefix(order) || isManualSystemOrder(order)) {
+    return "manual";
+  }
+
+  const rd = readRawDataObject(order);
+  const candidates = [
+    order.platform,
+    order.order_platform,
+    order.orderPlatform,
+    order.source_platform,
+    order.sourcePlatform,
+    rd?.platform,
+    rd?.order_platform,
+    rd?.orderPlatform,
   ];
 
-  return ids.some((value) =>
-    /^manual-order-/i.test(String(value ?? "").trim()),
-  );
+  for (const value of candidates) {
+    const text = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    if (KNOWN_PLATFORMS.has(text)) return text;
+  }
+
+  return "easyorder";
 }
 
 /** حالة العميل من الطلب (`customerStatus` / `customer_status`). */
