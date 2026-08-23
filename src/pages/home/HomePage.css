@@ -23,12 +23,12 @@
 }
 .dashboard-topbar {
   display: flex;
-  align-items: end;
-  justify-content: end;
+  align-items: center;
+  justify-content: stretch;
+  width: 100%;
   gap: 16px;
   margin-bottom: 18px;
   margin-top: 18px;
-
 }
 
 .dashboard-topbar h1 {
@@ -43,18 +43,23 @@
 
 .dashboard-topbar__controls {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 
-.dashboard-select--product {
-  min-width: 200px;
-  max-width: min(340px, 100%);
+.dashboard-select--employee {
+  flex: 0 1 160px;
+  min-width: 132px;
+  max-width: 200px;
 }
 
+.dashboard-select--product,
 .dashboard-product-multiselect {
-  min-width: 220px;
-  max-width: min(360px, 100%);
+  flex: 1 1 180px;
+  min-width: 150px;
+  max-width: none;
 }
 
 .dashboard-product-multiselect .searchable-select__trigger {
@@ -172,11 +177,15 @@
 }
 
 .dashboard-date-input {
-  min-width: 150px;
+  flex: 0 0 148px;
+  min-width: 138px;
+  width: 148px;
   color: #2b2b2b;
 }
 
 .dashboard-refresh-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
   cursor: pointer;
   background: #5b6fb6;
   border-color: #5b6fb6;
@@ -824,17 +833,20 @@
 
   .dashboard-topbar {
     flex-direction: column;
-    align-items: start;
+    align-items: stretch;
   }
 
   .dashboard-topbar__controls {
     width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
 
   .dashboard-select,
   .dashboard-date-input,
-  .dashboard-refresh-btn {
-    width: 100%;
+  .dashboard-refresh-btn,
+  .dashboard-product-multiselect {
+    width: auto;
   }
 
   .dashboard-kpis,

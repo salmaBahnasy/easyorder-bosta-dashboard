@@ -52,9 +52,10 @@ const TREND_PERIOD_OPTIONS = [
 function normalizeProductIds(productIds) {
   const list = Array.isArray(productIds)
     ? productIds
-    : String(productIds ?? "")
-        .split(",");
-  return [...new Set(list.map((id) => String(id ?? "").trim()).filter(Boolean))];
+    : String(productIds ?? "").split(",");
+  return [
+    ...new Set(list.map((id) => String(id ?? "").trim()).filter(Boolean)),
+  ];
 }
 
 function buildTrendQueryParams({
@@ -65,8 +66,13 @@ function buildTrendQueryParams({
   employees,
   product_ids,
 }) {
-  const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
-  Object.assign(params, resolveEmployeeOrderFilterParams(employees, employeeId));
+  const params = {
+    ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }),
+  };
+  Object.assign(
+    params,
+    resolveEmployeeOrderFilterParams(employees, employeeId),
+  );
   const ids = normalizeProductIds(product_ids);
   if (ids.length) params.product_ids = ids.join(",");
   return params;
@@ -97,21 +103,35 @@ function normalizeStatsPayload(response) {
   return response?.stats ?? response?.data?.stats ?? response?.data ?? response;
 }
 
-function buildProductSalesQueryParams({ dateRange, dateFrom, dateTo, granularity }) {
-  const params = { ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }) };
+function buildProductSalesQueryParams({
+  dateRange,
+  dateFrom,
+  dateTo,
+  granularity,
+}) {
+  const params = {
+    ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }),
+  };
   const g = String(granularity ?? "day").trim();
   if (g) params.granularity = g;
   return params;
 }
 
 /** GET chart: from/to + date_basis. بدون from/to → الـ API يستخدم آخر 30 يوم. */
-function buildOrderCostChartRangeQuery({ dateFrom, dateTo, date_basis = "created" }) {
+function buildOrderCostChartRangeQuery({
+  dateFrom,
+  dateTo,
+  date_basis = "created",
+}) {
   const from = String(dateFrom ?? "").trim();
   const to = String(dateTo ?? "").trim();
   const basis = String(date_basis ?? "created").trim() || "created";
   const params = { date_basis: basis };
   if (from && to) {
-    Object.assign(params, computeEgyptDateRangeParams({ dateFrom: from, dateTo: to }));
+    Object.assign(
+      params,
+      computeEgyptDateRangeParams({ dateFrom: from, dateTo: to }),
+    );
   }
   return params;
 }
@@ -189,7 +209,9 @@ export default function HomePage() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [productFilter, setProductFilter] = useState([]);
   const [orderCostsExpense, setOrderCostsExpense] = useState("");
-  const [orderCostsSaveDate, setOrderCostsSaveDate] = useState(() => egyptTodayYmd());
+  const [orderCostsSaveDate, setOrderCostsSaveDate] = useState(() =>
+    egyptTodayYmd(),
+  );
   const [orderCostsError, setOrderCostsError] = useState("");
   const [orderCostsSuccess, setOrderCostsSuccess] = useState("");
   const [orderCostsSaving, setOrderCostsSaving] = useState(false);
@@ -313,7 +335,8 @@ export default function HomePage() {
     } catch (error) {
       console.log(error);
       setOrderCostChart(null);
-      const message = error?.response?.data?.message ?? "تعذر تحميل جراف تكلفة الطلبات";
+      const message =
+        error?.response?.data?.message ?? "تعذر تحميل جراف تكلفة الطلبات";
       setOrderCostsError(message);
     } finally {
       setOrderCostChartLoading(false);
@@ -328,7 +351,11 @@ export default function HomePage() {
       setOrderCostsSuccess("");
       return;
     }
-    if (!Number.isFinite(expenseNum) || expenseNum < 0 || String(orderCostsExpense ?? "").trim() === "") {
+    if (
+      !Number.isFinite(expenseNum) ||
+      expenseNum < 0 ||
+      String(orderCostsExpense ?? "").trim() === ""
+    ) {
       setOrderCostsError("أدخلي المصروفات (رقم ≥ 0)");
       setOrderCostsSuccess("");
       return;
@@ -347,12 +374,18 @@ export default function HomePage() {
       await fetchOrderCostChart();
     } catch (error) {
       console.log(error);
-      const message = error?.response?.data?.message ?? "تعذر حفظ مصروفات اليوم";
+      const message =
+        error?.response?.data?.message ?? "تعذر حفظ مصروفات اليوم";
       setOrderCostsError(message);
     } finally {
       setOrderCostsSaving(false);
     }
-  }, [orderCostsSaveDate, orderCostsExpense, orderCostDateBasis, fetchOrderCostChart]);
+  }, [
+    orderCostsSaveDate,
+    orderCostsExpense,
+    orderCostDateBasis,
+    fetchOrderCostChart,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -492,7 +525,8 @@ export default function HomePage() {
     [stats?.byOrderStatus],
   );
   const shippingSegments = useMemo(
-    () => buildDonutSegments(SHIPPING_STATUS_DONUT_DEFS, stats?.byShippingStatus),
+    () =>
+      buildDonutSegments(SHIPPING_STATUS_DONUT_DEFS, stats?.byShippingStatus),
     [stats?.byShippingStatus],
   );
   const orderSourceSegments = useMemo(
@@ -521,7 +555,9 @@ export default function HomePage() {
           >
             <option value="">كل الموظفين</option>
             {employees.map((emp) => {
-              const eid = String(emp?.id ?? emp?._id ?? emp?.employeeId ?? "").trim();
+              const eid = String(
+                emp?.id ?? emp?._id ?? emp?.employeeId ?? "",
+              ).trim();
               if (!eid) return null;
               return (
                 <option key={eid} value={eid}>
@@ -538,7 +574,9 @@ export default function HomePage() {
             options={productOptions}
             getOptionValue={(option) => option.id}
             getOptionLabel={(option) => option.label}
-            placeholder={productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"}
+            placeholder={
+              productsLoading ? "جاري تحميل المنتجات..." : "كل المنتجات"
+            }
             searchPlaceholder="ابحث عن منتج..."
             disabled={productsLoading}
             loading={productsLoading}
@@ -562,7 +600,11 @@ export default function HomePage() {
             aria-label="إلى تاريخ"
             title="إلى تاريخ"
           />
-          <button type="button" className="dashboard-refresh-btn" onClick={handleRefreshStats}>
+          <button
+            type="button"
+            className="dashboard-refresh-btn"
+            onClick={handleRefreshStats}
+          >
             تحديث الداتا
           </button>
         </div>

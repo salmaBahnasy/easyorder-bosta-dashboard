@@ -108,6 +108,7 @@ export function buildOrdersListFilterParams({
   productId,
   product_sku,
   productSku,
+  platform,
   maxRows,
 } = {}) {
   const employee = employee_id ?? employeeId;
@@ -140,6 +141,7 @@ export function buildOrdersListFilterParams({
     shipping_status,
     product_id: product,
     product_sku: sku,
+    platform,
     maxRows,
   };
 

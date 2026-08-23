@@ -102,6 +102,13 @@ export default function OrdersPage() {
     { value: "failed", label: "failed" },
   ];
 
+  const platformOptions = [
+    { value: "", label: "كل المنصات" },
+    { value: "shopify", label: "shopify" },
+    { value: "easyorder", label: "easyorder" },
+    { value: "manual", label: "manual" },
+  ];
+
   function normalizeStatus(value) {
     return String(value ?? "")
       .trim()
@@ -169,6 +176,7 @@ export default function OrdersPage() {
       order_type: nextFilters.order_type || undefined,
       shipping_status: nextFilters.shipping_status || undefined,
       product_id: nextFilters.product_id?.trim() || undefined,
+      platform: nextFilters.platform || undefined,
       phone: nextFilters.phone?.trim() || undefined,
       customer_name: nextFilters.customer_name?.trim() || undefined,
       customerStatus: nextFilters.customerStatus || undefined,
@@ -652,6 +660,21 @@ export default function OrdersPage() {
             value={filters.to}
             onChange={(e) => handleFilterChange("to", e.target.value)}
           />
+        </label>
+
+        <label className="orders-page__field">
+          Platform
+          <select
+            className="orders-page__input"
+            value={filters.platform}
+            onChange={(e) => handleFilterChange("platform", e.target.value)}
+          >
+            {platformOptions.map((option) => (
+              <option key={option.value || "all-platforms"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label className="orders-page__field">

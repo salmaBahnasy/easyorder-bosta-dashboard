@@ -433,7 +433,9 @@ export function OrdersTrendLineChart({
               }}
               labelFormatter={(_l, payload) => {
                 const row = payload?.[0]?.payload;
-                return row?.date ? formatTrendTooltipDate(row.date, period) : "";
+                return row?.date
+                  ? formatTrendTooltipDate(row.date, period)
+                  : "";
               }}
               contentStyle={{
                 borderRadius: 10,
@@ -469,7 +471,11 @@ export function OrdersTrendLineChart({
                   <LabelList
                     dataKey="shippedLabel"
                     content={(props) => (
-                      <TrendShareLabel {...props} fill="#2563eb" position="top" />
+                      <TrendShareLabel
+                        {...props}
+                        fill="#2563eb"
+                        position="top"
+                      />
                     )}
                   />
                 ) : null}
