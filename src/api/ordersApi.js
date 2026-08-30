@@ -14,7 +14,17 @@ const API_BASE_URL = "https://easyorder-bosta-backend.onrender.com"; //"http://1
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 60_000,
 });
+
+export function isCanceledApiError(error) {
+  return (
+    axios.isCancel(error) ||
+    error?.code === "ERR_CANCELED" ||
+    error?.name === "CanceledError" ||
+    error?.name === "AbortError"
+  );
+}
 
 apiClient.interceptors.request.use(
   (config) => {
@@ -108,8 +118,10 @@ export function buildOrdersListFilterParams({
   productId,
   product_sku,
   productSku,
-  platform,
-  maxRows,
+    platform,
+    utm_source,
+    utmSource,
+    maxRows,
 } = {}) {
   const employee = employee_id ?? employeeId;
   const product = product_id ?? productId;
@@ -142,6 +154,7 @@ export function buildOrdersListFilterParams({
     product_id: product,
     product_sku: sku,
     platform,
+    utm_source: utm_source ?? utmSource,
     maxRows,
   };
 
@@ -522,17 +535,19 @@ function cleanApiParams(params = {}) {
   );
 }
 
-export async function getOrdersStats(params = {}) {
+export async function getOrdersStats(params = {}, { signal } = {}) {
   const response = await apiClient.get(dashboardApiPath("orders/stats"), {
     params: cleanApiParams(params),
+    signal,
   });
   return response.data;
 }
 
 /** Orders trend + summary KPIs — `GET /api/{system}/orders/stats/trend` */
-export async function getOrdersStatsTrend(params = {}) {
+export async function getOrdersStatsTrend(params = {}, { signal } = {}) {
   const response = await apiClient.get(dashboardApiPath("orders/stats/trend"), {
     params: cleanApiParams(params),
+    signal,
   });
   return response.data;
 }
@@ -582,9 +597,10 @@ export async function exportOrdersStatsTrend(params = {}) {
 }
 
 /** Product sales chart — `GET /api/{system}/charts/product-sales` */
-export async function getProductSalesChart(params = {}) {
+export async function getProductSalesChart(params = {}, { signal } = {}) {
   const response = await apiClient.get(dashboardApiPath("charts/product-sales"), {
     params: cleanApiParams(params),
+    signal,
   });
   return response.data;
 }
@@ -598,10 +614,14 @@ export async function getOrderCosts(params = {}) {
 }
 
 /** Order cost chart — `GET /api/{system}/charts/order-cost?from=&to=&date_basis=` */
-export async function getOrderCostChart({ from, to, date_basis } = {}) {
+export async function getOrderCostChart(
+  { from, to, date_basis } = {},
+  { signal } = {},
+) {
   const params = cleanApiParams({ from, to, date_basis });
   const response = await apiClient.get(dashboardApiPath("charts/order-cost"), {
     params,
+    signal,
   });
   return response.data;
 }
@@ -639,10 +659,17 @@ export async function getOrdersAnalytics(params = {}) {
   return response.data;
 }
 
-export async function getProducts({ page = 1, limit = 50, search } = {}) {
+export async function getProducts({
+  page = 1,
+  limit = 50,
+  search,
+  platform,
+} = {}) {
   const params = { page, limit };
   const q = typeof search === "string" ? search.trim() : "";
   if (q) params.search = q;
+  const p = String(platform ?? "").trim();
+  if (p) params.platform = p;
   const response = await apiClient.get(dashboardApiPath("products"), {
     params,
   });

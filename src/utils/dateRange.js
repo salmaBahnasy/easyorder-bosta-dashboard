@@ -116,11 +116,19 @@ export function buildEgyptPresetDateRange(preset) {
  * Dashboard / stats query builder: custom range or preset.
  */
 export function computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo } = {}) {
-  if (dateFrom && dateTo) {
-    const capped = clampDateRangeToToday(dateFrom, dateTo);
+  if (dateFrom || dateTo) {
+    const capped = clampDateRangeToToday(
+      dateFrom || dateTo,
+      dateTo || dateFrom,
+    );
     return buildEgyptDateRangeFromTo(capped.dateFrom, capped.dateTo);
   }
   return buildEgyptPresetDateRange(dateRange);
+}
+
+export function egyptDashboardDefaultDates() {
+  const to = egyptTodayYmd();
+  return { from: addDaysToYmd(to, -6), to };
 }
 
 /**

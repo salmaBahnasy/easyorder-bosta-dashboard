@@ -1,4 +1,4 @@
-import { isManualSystemOrder, orderCustomerStatus, orderPlatform } from "./orderDisplay";
+import { isManualSystemOrder, orderCustomerStatus } from "./orderDisplay";
 
 export function resolveCustomerStatusRefreshOrderId(order) {
   return (
@@ -12,11 +12,10 @@ export function resolveCustomerStatusRefreshOrderId(order) {
   );
 }
 
-/** هل ينفع نحدّث الحالة من EasyOrders؟ (لا للطلبات اليدوية ولا Shopify) */
+/** هل ينفع نحدّث الحالة؟ (لا للطلبات اليدوية) */
 export function canRefreshCustomerStatus(order) {
   if (!order) return false;
   if (isManualSystemOrder(order)) return false;
-  if (orderPlatform(order) === "shopify") return false;
   return Boolean(String(resolveCustomerStatusRefreshOrderId(order) ?? "").trim());
 }
 
@@ -32,8 +31,7 @@ export function isPendingCustomerStatus(orderOrStatus) {
   if (
     orderOrStatus &&
     typeof orderOrStatus === "object" &&
-    (isManualSystemOrder(orderOrStatus) ||
-      orderPlatform(orderOrStatus) === "shopify")
+    isManualSystemOrder(orderOrStatus)
   ) {
     return false;
   }
@@ -50,7 +48,11 @@ export function pickCustomerStatusFromRefreshResult(result) {
     result?.data?.customerStatus ??
     result?.data?.order?.customerStatus ??
     result?.data?.order?.customer_status ??
+    result?.data?.easyConfirm ??
+    result?.data?.easyconfirm ??
     result?.customerStatus ??
+    result?.easyConfirm ??
+    result?.easyconfirm ??
     null;
   const text = String(next ?? "").trim();
   return text || null;
@@ -63,5 +65,7 @@ export function applyCustomerStatusToOrder(order, statusValue) {
     ...order,
     customerStatus: status,
     customer_status: status,
+    easyConfirm: status,
+    easyconfirm: status,
   };
 }

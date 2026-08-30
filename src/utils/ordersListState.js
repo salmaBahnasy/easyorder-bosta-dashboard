@@ -16,6 +16,7 @@ export function getDefaultOrdersFilters() {
     shipping_status: "",
     product_id: "",
     platform: "",
+    utm_source: "",
   };
 }
 

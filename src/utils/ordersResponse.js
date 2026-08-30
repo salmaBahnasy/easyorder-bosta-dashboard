@@ -102,10 +102,21 @@ function resolvePaginationMeta({
   };
 }
 
+function pickFilterLists(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  return (
+    payload.filterLists ??
+    payload.filter_lists ??
+    payload.data?.filterLists ??
+    payload.data?.filter_lists ??
+    null
+  );
+}
+
 /** يدعم شكل { data: { data: [...] } } وغيره من أشكال الاستجابة */
 export function parseOrdersResponse(result, { limit } = {}) {
   if (result == null) {
-    return { list: [], page: 1, total: 0, totalPages: 1 };
+    return { list: [], page: 1, total: 0, totalPages: 1, filterLists: null };
   }
   if (Array.isArray(result)) {
     const list = mapList(result);
@@ -114,6 +125,7 @@ export function parseOrdersResponse(result, { limit } = {}) {
       page: 1,
       total: list.length,
       totalPages: 1,
+      filterLists: null,
     };
   }
 
@@ -127,6 +139,7 @@ export function parseOrdersResponse(result, { limit } = {}) {
         limit,
         root: result,
       }),
+      filterLists: pickFilterLists(result),
     };
   }
 
@@ -140,8 +153,9 @@ export function parseOrdersResponse(result, { limit } = {}) {
         nested: topData,
         root: result,
       }),
+      filterLists: pickFilterLists(topData) ?? pickFilterLists(result),
     };
   }
 
-  return { list: [], page: 1, total: 0, totalPages: 1 };
+  return { list: [], page: 1, total: 0, totalPages: 1, filterLists: pickFilterLists(result) };
 }

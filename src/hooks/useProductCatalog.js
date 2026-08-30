@@ -4,7 +4,8 @@ import { productOptionId } from "../pages/orders/cartCatalogHelpers";
 import { normalizeProductListFromApi } from "../utils/normalizeProductListFromApi";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
 
-export function useProductCatalog(cartItems = []) {
+export function useProductCatalog(cartItems = [], { platform } = {}) {
+  const catalogPlatform = String(platform ?? "").trim();
   const [productSearch, setProductSearch] = useState("");
   const debouncedSearch = useDebouncedValue(productSearch, 300);
   const [catalogProducts, setCatalogProducts] = useState([]);
@@ -19,14 +20,16 @@ export function useProductCatalog(cartItems = []) {
 
   useEffect(() => {
     let cancelled = false;
+    cacheRef.current = new Map();
 
     async function loadCatalog() {
       setCatalogLoading(true);
       try {
         const data = await getProducts({
           page: 1,
-          limit: 100,
+          limit: 200,
           search: debouncedSearch,
+          ...(catalogPlatform ? { platform: catalogPlatform } : {}),
         });
         const list = normalizeProductListFromApi(data);
         rememberProducts(list);
@@ -43,7 +46,7 @@ export function useProductCatalog(cartItems = []) {
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch]);
+  }, [debouncedSearch, catalogPlatform]);
 
   const catalogProductsForSelect = useMemo(() => {
     const seen = new Set();

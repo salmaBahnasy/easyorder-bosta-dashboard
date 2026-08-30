@@ -442,15 +442,21 @@ export function orderCustomerStatus(order) {
   // الطلبات اليدوية من السيستم تعتبر confirmed دائمًا
   if (isManualSystemOrder(order)) return "confirmed";
 
-  // طلبات Shopify مالهاش EasyConfirm
-  if (orderPlatform(order) === "shopify") return null;
-
+  const rd = readRawDataObject(order);
   const raw =
     order.customerStatus ??
     order.customer_status ??
+    order.easyConfirm ??
+    order.easyconfirm ??
+    order.easy_confirm ??
     order["Customer Status"] ??
     order.customer?.status ??
-    order.customer?.customerStatus;
+    order.customer?.customerStatus ??
+    rd?.customerStatus ??
+    rd?.customer_status ??
+    rd?.easyConfirm ??
+    rd?.easyconfirm ??
+    rd?.easy_confirm;
   const text = String(raw ?? "").trim();
   return text || null;
 }

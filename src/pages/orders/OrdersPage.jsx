@@ -22,16 +22,19 @@ import {
 } from "../../utils/customerStatusRefresh";
 import { parseOrdersResponse } from "../../utils/ordersResponse";
 import {
+  getDefaultOrdersFilters,
+  resolveOrdersListBootState,
+  writeOrdersListState,
+} from "../../utils/ordersListState";
+import {
   getProductFilterId,
   getProductListLabel,
   normalizeProductList,
 } from "../../utils/ordersFilterProductOptions";
 import {
-  clearOrdersListState,
-  getDefaultOrdersFilters,
-  resolveOrdersListBootState,
-  writeOrdersListState,
-} from "../../utils/ordersListState";
+  normalizeUtmSourceOptions,
+  pickFilterListsUtmSource,
+} from "../../utils/utmSourceOptions";
 import "./OrdersPage.css";
 
 export default function OrdersPage() {
@@ -59,6 +62,7 @@ export default function OrdersPage() {
   const [refreshingCustomerStatusId, setRefreshingCustomerStatusId] =
     useState(null);
   const [pendingCustomerStatusPass, setPendingCustomerStatusPass] = useState(0);
+  const [utmSourceOptionsRaw, setUtmSourceOptionsRaw] = useState(null);
   const customerStatusRefreshGenRef = useRef(0);
   const statusOptions = [
     { value: "", label: "كل الحالات" },
@@ -108,6 +112,14 @@ export default function OrdersPage() {
     { value: "easyorder", label: "easyorder" },
     { value: "manual", label: "manual" },
   ];
+
+  const utmSourceOptions = useMemo(
+    () => [
+      { value: "", label: "كل UTM Source" },
+      ...normalizeUtmSourceOptions(utmSourceOptionsRaw),
+    ],
+    [utmSourceOptionsRaw],
+  );
 
   function normalizeStatus(value) {
     return String(value ?? "")
@@ -177,6 +189,7 @@ export default function OrdersPage() {
       shipping_status: nextFilters.shipping_status || undefined,
       product_id: nextFilters.product_id?.trim() || undefined,
       platform: nextFilters.platform || undefined,
+      utm_source: nextFilters.utm_source || undefined,
       phone: nextFilters.phone?.trim() || undefined,
       customer_name: nextFilters.customer_name?.trim() || undefined,
       customerStatus: nextFilters.customerStatus || undefined,
@@ -193,7 +206,7 @@ export default function OrdersPage() {
         ...buildOrdersApiFilters(nextFilters),
       });
 
-      const { list, page, total, totalPages } = parseOrdersResponse(result, {
+      const { list, page, total, totalPages, filterLists } = parseOrdersResponse(result, {
         limit,
       });
       const resolvedPage = page ?? pageNumber;
@@ -201,6 +214,8 @@ export default function OrdersPage() {
       setPage(resolvedPage);
       setTotal(total ?? list.length);
       setTotalPages(totalPages ?? 1);
+      const utmList = pickFilterListsUtmSource({ filterLists }) ?? pickFilterListsUtmSource(result);
+      if (utmList) setUtmSourceOptionsRaw(utmList);
       writeOrdersListState({ filters: nextFilters, page: resolvedPage });
       setPendingCustomerStatusPass((n) => n + 1);
     } catch (error) {
@@ -671,6 +686,21 @@ export default function OrdersPage() {
           >
             {platformOptions.map((option) => (
               <option key={option.value || "all-platforms"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="orders-page__field">
+          UTM Source
+          <select
+            className="orders-page__input"
+            value={filters.utm_source ?? ""}
+            onChange={(e) => handleFilterChange("utm_source", e.target.value)}
+          >
+            {utmSourceOptions.map((option) => (
+              <option key={option.value || "all-utm"} value={option.value}>
                 {option.label}
               </option>
             ))}

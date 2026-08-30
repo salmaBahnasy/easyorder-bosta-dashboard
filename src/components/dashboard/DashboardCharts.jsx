@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { filterPointsUpToToday } from "../../utils/dateRange";
+import { utmSourceDisplayLabel } from "../../utils/utmSourceOptions";
 import {
   Bar,
   BarChart,
@@ -1324,6 +1325,69 @@ export const SHIPPING_STATUS_DONUT_DEFS = [
   { key: "delivered", label: "تم التسليم", fill: "#22c55e" },
   { key: "failed", label: "فشل", fill: "#ef4444" },
 ];
+
+export const UTM_SOURCE_DONUT_DEFS = [
+  {
+    key: "ig",
+    keys: ["ig", "instagram"],
+    label: "Instagram",
+    fill: "#e1306c",
+  },
+  {
+    key: "fb",
+    keys: ["fb", "facebook"],
+    label: "Facebook",
+    fill: "#1877f2",
+  },
+  {
+    key: "tiktok",
+    keys: ["tiktok", "tt"],
+    label: "TikTok",
+    fill: "#111827",
+  },
+];
+
+const EMPTY_UTM_KEYS = new Set(["", "(empty)", "unknown", "none", "null"]);
+
+export function buildUtmSourceDonutSegments(raw) {
+  const map = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const segments = UTM_SOURCE_DONUT_DEFS.map((d) => ({
+    key: d.key,
+    name: d.label,
+    fill: d.fill,
+    value: firstBucketValue(map, d.keys ?? [d.key]),
+  }));
+  const used = new Set(
+    UTM_SOURCE_DONUT_DEFS.flatMap((d) =>
+      (d.keys ?? [d.key]).map((k) => String(k).toLowerCase()),
+    ),
+  );
+
+  const extras = Object.entries(map)
+    .filter(([key, value]) => {
+      const k = String(key).trim().toLowerCase();
+      if (used.has(k)) return false;
+      if (EMPTY_UTM_KEYS.has(k)) return Number(value) > 0;
+      return true;
+    })
+    .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0));
+
+  let extraIndex = 0;
+  for (const [key, value] of extras) {
+    const k = String(key).trim();
+    const isEmpty = EMPTY_UTM_KEYS.has(k.toLowerCase());
+    segments.push({
+      key: k || "unknown",
+      name: isEmpty ? "غير محدد" : utmSourceDisplayLabel(k) || k,
+      fill: isEmpty
+        ? "#94a3b8"
+        : DONUT_PALETTE[extraIndex++ % DONUT_PALETTE.length],
+      value: Number(value) || 0,
+    });
+  }
+
+  return segments;
+}
 
 export function buildDonutSegments(defs, raw) {
   const list = Array.isArray(defs) ? defs : [];

@@ -239,7 +239,6 @@ export default function OrdersTable({
             const platform = orderPlatform(order);
             const isPendingCustomerStatus =
               !isManualSystemOrder(order) &&
-              platform !== "shopify" &&
               (customerStatusKey === "pending" || !customerStatusRaw);
             const showRefreshCustomerStatus =
               Boolean(onRefreshCustomerStatus) &&

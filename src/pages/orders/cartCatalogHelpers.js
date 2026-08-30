@@ -22,6 +22,32 @@ export function unwrapCatalogProduct(row) {
   return row;
 }
 
+export function catalogIdCandidates(product) {
+  const p = unwrapCatalogProduct(product);
+  const rd = parseProductRawData(p);
+  return [
+    p?.easyorder_id,
+    p?.id,
+    p?._id,
+    p?.product_id,
+    p?.uuid,
+    rd?.id,
+    rd?.shopify_product_id,
+    rd?.product_id,
+  ]
+    .map((v) => String(v ?? "").trim())
+    .filter(Boolean);
+}
+
+export function catalogIdsMatch(left, right) {
+  const a = String(left ?? "").trim();
+  const b = String(right ?? "").trim();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const strip = (value) => value.replace(/^shopify-/i, "");
+  return strip(a) === strip(b);
+}
+
 export function productOptionId(product, index) {
   const p = unwrapCatalogProduct(product);
   return String(

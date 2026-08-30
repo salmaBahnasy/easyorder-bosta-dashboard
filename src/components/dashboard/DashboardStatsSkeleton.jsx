@@ -106,7 +106,7 @@ export default function DashboardStatsSkeleton() {
       </section>
 
       <section className="dashboard-charts-row dashboard-charts-row--donuts">
-        {Array.from({ length: 4 }).map((_, index) => (
+        {Array.from({ length: 5 }).map((_, index) => (
           <DonutCardSkeleton key={`donut-${index}`} />
         ))}
       </section>

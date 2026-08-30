@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   downloadOrdersExportFile,
   exportOrdersStatsTrend,
@@ -14,6 +14,7 @@ import {
 import OrderCostsSection from "../../components/dashboard/OrderCostsSection";
 import {
   buildDonutSegments,
+  buildUtmSourceDonutSegments,
   ORDER_SOURCE_DONUT_DEFS,
   ORDER_STATUS_DONUT_DEFS,
   ORDER_TYPE_DONUT_DEFS,
@@ -39,9 +40,16 @@ import {
 } from "../../utils/ordersFilterProductOptions";
 import {
   computeEgyptDateRangeParams,
+  egyptDashboardDefaultDates,
   egyptTodayYmd,
   filterPointsUpToToday,
 } from "../../utils/dateRange";
+import { getSelectedSystem } from "../../utils/auth";
+import {
+  normalizeUtmSourceOptions,
+  pickFilterListsUtmSource,
+  pickStatsUtmSourceMap,
+} from "../../utils/utmSourceOptions";
 
 const TREND_PERIOD_OPTIONS = [
   { value: "daily", label: "يومي" },
@@ -63,18 +71,17 @@ function buildTrendQueryParams({
   dateFrom,
   dateTo,
   employeeId,
-  employees,
   product_ids,
+  utm_source,
 }) {
   const params = {
     ...computeEgyptDateRangeParams({ dateRange, dateFrom, dateTo }),
   };
-  Object.assign(
-    params,
-    resolveEmployeeOrderFilterParams(employees, employeeId),
-  );
+  Object.assign(params, resolveEmployeeOrderFilterParams(null, employeeId));
   const ids = normalizeProductIds(product_ids);
   if (ids.length) params.product_ids = ids.join(",");
+  const utm = String(utm_source ?? "").trim();
+  if (utm) params.utm_source = utm;
   return params;
 }
 
@@ -101,6 +108,35 @@ function normalizeProductSalesChart(response) {
 
 function normalizeStatsPayload(response) {
   return response?.stats ?? response?.data?.stats ?? response?.data ?? response;
+}
+
+function kpiSummaryFromStats(stats) {
+  if (!stats || typeof stats !== "object") return {};
+  return {
+    totalOrders: stats.totalOrders ?? stats.total_orders,
+    total:
+      stats.total ??
+      stats.totalSales ??
+      stats.total_sales ??
+      stats.totalRevenue ??
+      stats.total_revenue,
+    totalProductUnits:
+      stats.totalProductUnits ??
+      stats.total_product_units ??
+      stats.totalUnits ??
+      stats.total_units,
+    averageUnitsPerOrder:
+      stats.averageUnitsPerOrder ?? stats.average_units_per_order,
+    averageOrderValue: stats.averageOrderValue ?? stats.average_order_value,
+  };
+}
+
+function hasAnyKpiValue(summary) {
+  if (!summary || typeof summary !== "object") return false;
+  return TREND_METRIC_DEFS.some((def) => {
+    const value = summary[def.key];
+    return value != null && value !== "";
+  });
 }
 
 function buildProductSalesQueryParams({
@@ -187,6 +223,83 @@ function normalizeOrderCostChart(response) {
   };
 }
 
+function parseEmployeesPayload(data) {
+  if (Array.isArray(data?.employees)) return data.employees;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+const dashboardEmployeesCache = { system: "", list: null, inflight: null };
+const dashboardProductsCache = { system: "", list: null, inflight: null };
+
+function peekDashboardCache(cache) {
+  const system = getSelectedSystem() || "easyorder";
+  return cache.system === system && Array.isArray(cache.list) ? cache.list : null;
+}
+
+function loadDashboardEmployees() {
+  const system = getSelectedSystem() || "easyorder";
+  const cached = peekDashboardCache(dashboardEmployeesCache);
+  if (cached) return Promise.resolve(cached);
+  if (
+    dashboardEmployeesCache.system === system &&
+    dashboardEmployeesCache.inflight
+  ) {
+    return dashboardEmployeesCache.inflight;
+  }
+
+  dashboardEmployeesCache.system = system;
+  dashboardEmployeesCache.list = null;
+  dashboardEmployeesCache.inflight = getEmployees()
+    .then((data) => {
+      const list = parseEmployeesPayload(data);
+      dashboardEmployeesCache.system = system;
+      dashboardEmployeesCache.list = list;
+      dashboardEmployeesCache.inflight = null;
+      return list;
+    })
+    .catch((error) => {
+      if (dashboardEmployeesCache.system === system) {
+        dashboardEmployeesCache.inflight = null;
+        dashboardEmployeesCache.list = null;
+      }
+      throw error;
+    });
+  return dashboardEmployeesCache.inflight;
+}
+
+function loadDashboardProducts() {
+  const system = getSelectedSystem() || "easyorder";
+  const cached = peekDashboardCache(dashboardProductsCache);
+  if (cached) return Promise.resolve(cached);
+  if (
+    dashboardProductsCache.system === system &&
+    dashboardProductsCache.inflight
+  ) {
+    return dashboardProductsCache.inflight;
+  }
+
+  dashboardProductsCache.system = system;
+  dashboardProductsCache.list = null;
+  dashboardProductsCache.inflight = getProducts({ page: 1, limit: 200 })
+    .then((data) => {
+      const list = normalizeProductList(data);
+      dashboardProductsCache.system = system;
+      dashboardProductsCache.list = list;
+      dashboardProductsCache.inflight = null;
+      return list;
+    })
+    .catch((error) => {
+      if (dashboardProductsCache.system === system) {
+        dashboardProductsCache.inflight = null;
+        dashboardProductsCache.list = null;
+      }
+      throw error;
+    });
+  return dashboardProductsCache.inflight;
+}
+
 export default function HomePage() {
   const [trendChart, setTrendChart] = useState(null);
   const [productSalesChart, setProductSalesChart] = useState(null);
@@ -201,13 +314,23 @@ export default function HomePage() {
   const [productSalesMetric, setProductSalesMetric] = useState("totalUnits");
   const [productSalesGranularity, setProductSalesGranularity] = useState("day");
   const [dateRange] = useState("7d");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [employees, setEmployees] = useState([]);
+  const [dateFrom, setDateFrom] = useState(
+    () => egyptDashboardDefaultDates().from,
+  );
+  const [dateTo, setDateTo] = useState(() => egyptDashboardDefaultDates().to);
+  const [employees, setEmployees] = useState(
+    () => peekDashboardCache(dashboardEmployeesCache) ?? [],
+  );
   const [employeeFilter, setEmployeeFilter] = useState("");
-  const [products, setProducts] = useState([]);
-  const [productsLoading, setProductsLoading] = useState(false);
+  const [products, setProducts] = useState(
+    () => peekDashboardCache(dashboardProductsCache) ?? [],
+  );
+  const [productsLoading, setProductsLoading] = useState(
+    () => !peekDashboardCache(dashboardProductsCache),
+  );
   const [productFilter, setProductFilter] = useState([]);
+  const [utmSourceFilter, setUtmSourceFilter] = useState("");
+  const [utmSourceOptionsRaw, setUtmSourceOptionsRaw] = useState(null);
   const [orderCostsExpense, setOrderCostsExpense] = useState("");
   const [orderCostsSaveDate, setOrderCostsSaveDate] = useState(() =>
     egyptTodayYmd(),
@@ -220,20 +343,23 @@ export default function HomePage() {
   const [orderCostSeries, setOrderCostSeries] = useState("orders");
   const [orderCostDateBasis, setOrderCostDateBasis] = useState("created");
 
-  const buildDashboardQuery = useCallback(
+  const productIdsKey = normalizeProductIds(productFilter).join(",");
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const dashboardQuery = useMemo(
     () =>
       buildTrendQueryParams({
         dateRange,
         dateFrom,
         dateTo,
         employeeId: String(employeeFilter ?? "").trim(),
-        employees,
-        product_ids: productFilter,
+        product_ids: productIdsKey,
+        utm_source: utmSourceFilter,
       }),
-    [dateRange, dateFrom, dateTo, employeeFilter, employees, productFilter],
+    [dateRange, dateFrom, dateTo, employeeFilter, productIdsKey, utmSourceFilter],
   );
 
-  const buildProductSalesQuery = useCallback(
+  const productSalesQuery = useMemo(
     () =>
       buildProductSalesQueryParams({
         dateRange,
@@ -244,104 +370,122 @@ export default function HomePage() {
     [dateRange, dateFrom, dateTo, productSalesGranularity],
   );
 
-  const applyProductSalesSelection = useCallback((productSales) => {
-    const productsList = Array.isArray(productSales?.products)
-      ? productSales.products
-      : [];
-    setProductSalesProductId((current) => {
-      if (productsList.length === 0) return "";
-      if (productsList.some((p) => p.product_id === current)) return current;
-      return productsList[0].product_id;
-    });
-  }, []);
+  const orderCostQuery = useMemo(
+    () =>
+      buildOrderCostChartRangeQuery({
+        dateFrom,
+        dateTo,
+        date_basis: orderCostDateBasis,
+      }),
+    [dateFrom, dateTo, orderCostDateBasis],
+  );
 
-  const dashboardLoadGenRef = useRef(0);
-  const trendLoadGenRef = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingStats(true);
+    getOrdersStats(dashboardQuery)
+      .then((statsRes) => {
+        if (cancelled) return;
+        const utmList = pickFilterListsUtmSource(statsRes);
+        if (utmList) setUtmSourceOptionsRaw(utmList);
+        const normalized = normalizeStatsPayload(statsRes) ?? {};
+        const utmMap = pickStatsUtmSourceMap(statsRes);
+        setStats(
+          Object.keys(utmMap).length > 0
+            ? { ...normalized, byUtmSource: utmMap }
+            : normalized,
+        );
+      })
+      .catch((error) => {
+        console.log(error);
+        if (!cancelled) setStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStats(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardQuery, refreshTick]);
 
-  const loadTrendChart = useCallback(() => {
-    const query = { ...buildDashboardQuery(), period: trendPeriod };
-    const gen = trendLoadGenRef.current + 1;
-    trendLoadGenRef.current = gen;
+  useEffect(() => {
+    let cancelled = false;
     setLoadingTrend(true);
-
-    getOrdersStatsTrend(query)
+    setTrendChart(null);
+    getOrdersStatsTrend({ ...dashboardQuery, period: trendPeriod })
       .then((trendRes) => {
-        if (trendLoadGenRef.current !== gen) return;
+        if (cancelled) return;
+        const utmList = pickFilterListsUtmSource(trendRes);
+        if (utmList) setUtmSourceOptionsRaw(utmList);
         setTrendChart(normalizeTrendChart(trendRes));
       })
       .catch((error) => {
         console.log(error);
-        if (trendLoadGenRef.current !== gen) return;
-        setTrendChart(null);
+        if (!cancelled) setTrendChart(null);
       })
       .finally(() => {
-        if (trendLoadGenRef.current === gen) setLoadingTrend(false);
+        if (!cancelled) setLoadingTrend(false);
       });
-  }, [buildDashboardQuery, trendPeriod]);
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardQuery, trendPeriod, refreshTick]);
 
-  const loadDashboardSections = useCallback(() => {
-    const query = buildDashboardQuery();
-    const productSalesQuery = buildProductSalesQuery();
-    const gen = dashboardLoadGenRef.current + 1;
-    dashboardLoadGenRef.current = gen;
-
-    setLoadingStats(true);
+  useEffect(() => {
+    let cancelled = false;
     setLoadingProductSales(true);
-
-    getOrdersStats(query)
-      .then((statsRes) => {
-        if (dashboardLoadGenRef.current !== gen) return;
-        setStats(normalizeStatsPayload(statsRes) ?? {});
-      })
-      .catch((error) => {
-        console.log(error);
-        if (dashboardLoadGenRef.current !== gen) return;
-        setStats(null);
-      })
-      .finally(() => {
-        if (dashboardLoadGenRef.current === gen) setLoadingStats(false);
-      });
-
     getProductSalesChart(productSalesQuery)
       .then((productSalesRes) => {
-        if (dashboardLoadGenRef.current !== gen) return;
+        if (cancelled) return;
         const productSales = normalizeProductSalesChart(productSalesRes);
         setProductSalesChart(productSales);
-        applyProductSalesSelection(productSales);
+        const productsList = Array.isArray(productSales?.products)
+          ? productSales.products
+          : [];
+        setProductSalesProductId((current) => {
+          if (productsList.length === 0) return "";
+          if (productsList.some((p) => p.product_id === current)) return current;
+          return productsList[0].product_id;
+        });
       })
       .catch((error) => {
         console.log(error);
-        if (dashboardLoadGenRef.current !== gen) return;
-        setProductSalesChart(null);
-        setProductSalesProductId("");
+        if (!cancelled) {
+          setProductSalesChart(null);
+          setProductSalesProductId("");
+        }
       })
       .finally(() => {
-        if (dashboardLoadGenRef.current === gen) setLoadingProductSales(false);
+        if (!cancelled) setLoadingProductSales(false);
       });
-  }, [applyProductSalesSelection, buildDashboardQuery, buildProductSalesQuery]);
+    return () => {
+      cancelled = true;
+    };
+  }, [productSalesQuery, refreshTick]);
 
-  const fetchOrderCostChart = useCallback(async () => {
-    const query = buildOrderCostChartRangeQuery({
-      dateFrom,
-      dateTo,
-      date_basis: orderCostDateBasis,
-    });
-
+  useEffect(() => {
+    let cancelled = false;
     setOrderCostChartLoading(true);
     setOrderCostsError("");
-    try {
-      const response = await getOrderCostChart(query);
-      setOrderCostChart(normalizeOrderCostChart(response));
-    } catch (error) {
-      console.log(error);
-      setOrderCostChart(null);
-      const message =
-        error?.response?.data?.message ?? "تعذر تحميل جراف تكلفة الطلبات";
-      setOrderCostsError(message);
-    } finally {
-      setOrderCostChartLoading(false);
-    }
-  }, [dateFrom, dateTo, orderCostDateBasis]);
+    getOrderCostChart(orderCostQuery)
+      .then((response) => {
+        if (!cancelled) setOrderCostChart(normalizeOrderCostChart(response));
+      })
+      .catch((error) => {
+        console.log(error);
+        if (cancelled) return;
+        setOrderCostChart(null);
+        setOrderCostsError(
+          error?.response?.data?.message ?? "تعذر تحميل جراف تكلفة الطلبات",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setOrderCostChartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderCostQuery, refreshTick]);
 
   const saveOrderCostDayEntry = useCallback(async () => {
     const day = String(orderCostsSaveDate ?? "").trim();
@@ -371,7 +515,8 @@ export default function HomePage() {
         date_basis: orderCostDateBasis,
       });
       setOrderCostsSuccess(`تم حفظ مصروفات يوم ${day} بنجاح`);
-      await fetchOrderCostChart();
+      const response = await getOrderCostChart(orderCostQuery);
+      setOrderCostChart(normalizeOrderCostChart(response));
     } catch (error) {
       console.log(error);
       const message =
@@ -380,34 +525,25 @@ export default function HomePage() {
     } finally {
       setOrderCostsSaving(false);
     }
-  }, [
-    orderCostsSaveDate,
-    orderCostsExpense,
-    orderCostDateBasis,
-    fetchOrderCostChart,
-  ]);
+  }, [orderCostsSaveDate, orderCostsExpense, orderCostDateBasis, orderCostQuery]);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadEmployees() {
-      try {
-        const data = await getEmployees();
-        const list = Array.isArray(data?.employees)
-          ? data.employees
-          : Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data)
-              ? data
-              : [];
-        if (!cancelled) setEmployees(list);
-      } catch (error) {
-        console.log(error);
-        if (!cancelled) setEmployees([]);
-      }
+    const cached = peekDashboardCache(dashboardEmployeesCache);
+    if (cached) {
+      setEmployees(cached);
+      return undefined;
     }
 
-    loadEmployees();
+    loadDashboardEmployees()
+      .then((list) => {
+        if (!cancelled) setEmployees(list);
+      })
+      .catch((error) => {
+        console.log(error);
+        if (!cancelled) setEmployees([]);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -415,22 +551,26 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadAllProducts() {
-      try {
-        setProductsLoading(true);
-        const data = await getProducts({ page: 1, limit: 200 });
-        const list = normalizeProductList(data);
-        if (!cancelled) setProducts(list);
-      } catch (error) {
-        console.log(error);
-        if (!cancelled) setProducts([]);
-      } finally {
-        if (!cancelled) setProductsLoading(false);
-      }
+    const cached = peekDashboardCache(dashboardProductsCache);
+    if (cached) {
+      setProducts(cached);
+      setProductsLoading(false);
+      return undefined;
     }
 
-    loadAllProducts();
+    setProductsLoading(true);
+    loadDashboardProducts()
+      .then((list) => {
+        if (!cancelled) setProducts(list);
+      })
+      .catch((error) => {
+        console.log(error);
+        if (!cancelled) setProducts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setProductsLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -451,35 +591,20 @@ export default function HomePage() {
     return rows;
   }, [products]);
 
-  useEffect(() => {
-    loadDashboardSections();
-    return () => {
-      dashboardLoadGenRef.current += 1;
-    };
-  }, [loadDashboardSections]);
-
-  useEffect(() => {
-    loadTrendChart();
-    return () => {
-      trendLoadGenRef.current += 1;
-    };
-  }, [loadTrendChart]);
-
-  useEffect(() => {
-    fetchOrderCostChart();
-  }, [fetchOrderCostChart]);
+  const utmSourceOptions = useMemo(
+    () => normalizeUtmSourceOptions(utmSourceOptionsRaw),
+    [utmSourceOptionsRaw],
+  );
 
   function handleRefreshStats() {
-    loadDashboardSections();
-    loadTrendChart();
-    fetchOrderCostChart();
+    setRefreshTick((n) => n + 1);
   }
 
   async function handleExportTrend() {
     try {
       setExportingTrend(true);
       const result = await exportOrdersStatsTrend({
-        ...buildDashboardQuery(),
+        ...dashboardQuery,
         period: trendPeriod,
       });
       downloadOrdersExportFile(result);
@@ -495,7 +620,18 @@ export default function HomePage() {
     }
   }
 
-  const summary = trendChart?.summary ?? {};
+  const trendSummary =
+    trendChart?.summary && typeof trendChart.summary === "object"
+      ? trendChart.summary
+      : null;
+  const statsSummary = kpiSummaryFromStats(stats);
+  const summary = hasAnyKpiValue(trendSummary)
+    ? trendSummary
+    : hasAnyKpiValue(statsSummary)
+      ? statsSummary
+      : {};
+  const hasKpiData = hasAnyKpiValue(summary);
+  const showKpiSkeleton = !hasKpiData && (loadingTrend || loadingStats);
   const trendPoints = trendChart?.points ?? [];
   const productSalesProducts = productSalesChart?.products ?? [];
   const periodHint = "ملخص الفترة المحددة";
@@ -523,6 +659,10 @@ export default function HomePage() {
   const orderStatusSegments = useMemo(
     () => buildDonutSegments(ORDER_STATUS_DONUT_DEFS, stats?.byOrderStatus),
     [stats?.byOrderStatus],
+  );
+  const utmSourceSegments = useMemo(
+    () => buildUtmSourceDonutSegments(pickStatsUtmSourceMap(stats)),
+    [stats],
   );
   const shippingSegments = useMemo(
     () =>
@@ -583,6 +723,20 @@ export default function HomePage() {
             emptyText="لا توجد منتجات"
             panelFixed
           />
+          <select
+            className="dashboard-select dashboard-select--utm"
+            value={utmSourceFilter}
+            onChange={(e) => setUtmSourceFilter(e.target.value)}
+            aria-label="تصفية حسب UTM Source"
+            title="UTM Source"
+          >
+            <option value="">كل UTM Source</option>
+            {utmSourceOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
 
           <input
             type="date"
@@ -614,44 +768,43 @@ export default function HomePage() {
         <p className="dashboard-load-error">تعذر تحميل الإحصائيات حاليًا.</p>
       ) : (
         <>
-          {loadingTrend ? (
-            <>
-              <KpiCardsSkeleton />
-              <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
-                <TrendChartSkeleton />
-              </section>
-            </>
-          ) : trendChart ? (
-            <>
-              <section className="dashboard-kpis dashboard-kpis--5">
-                {kpiCards.map((card) => (
-                  <StatCard
-                    key={card.key}
-                    title={card.title}
-                    value={card.value}
-                    changeText={card.changeText}
-                    icon={card.icon}
-                    accent={card.accent}
-                  />
-                ))}
-              </section>
-
-              <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
-                <OrdersTrendLineChart
-                  points={trendPoints}
-                  metricKey={chartMetric}
-                  onMetricChange={setChartMetric}
-                  period={trendPeriod}
-                  onPeriodChange={setTrendPeriod}
-                  periodOptions={TREND_PERIOD_OPTIONS}
-                  onExport={handleExportTrend}
-                  exporting={exportingTrend}
+          {showKpiSkeleton ? (
+            <KpiCardsSkeleton />
+          ) : hasKpiData ? (
+            <section className="dashboard-kpis dashboard-kpis--5">
+              {kpiCards.map((card) => (
+                <StatCard
+                  key={card.key}
+                  title={card.title}
+                  value={card.value}
+                  changeText={card.changeText}
+                  icon={card.icon}
+                  accent={card.accent}
                 />
-              </section>
-            </>
+              ))}
+            </section>
           ) : null}
 
-          {loadingProductSales ? (
+          {loadingTrend && !trendChart ? (
+            <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+              <TrendChartSkeleton />
+            </section>
+          ) : trendChart ? (
+            <section className="dashboard-charts-row dashboard-charts-row--trend-pair">
+              <OrdersTrendLineChart
+                points={trendPoints}
+                metricKey={chartMetric}
+                onMetricChange={setChartMetric}
+                period={trendPeriod}
+                onPeriodChange={setTrendPeriod}
+                periodOptions={TREND_PERIOD_OPTIONS}
+                onExport={handleExportTrend}
+                exporting={exportingTrend}
+              />
+            </section>
+          ) : null}
+
+          {loadingProductSales && !productSalesChart ? (
             <section className="dashboard-charts-row dashboard-charts-row--product-analytics">
               <TrendChartSkeleton />
               <DonutCardSkeleton />
@@ -675,9 +828,9 @@ export default function HomePage() {
             </section>
           ) : null}
 
-          {loadingStats ? (
+          {loadingStats && !stats ? (
             <section className="dashboard-charts-row dashboard-charts-row--donuts">
-              {Array.from({ length: 4 }).map((_, index) => (
+              {Array.from({ length: 5 }).map((_, index) => (
                 <DonutCardSkeleton key={`donut-skel-${index}`} />
               ))}
             </section>
@@ -687,6 +840,11 @@ export default function HomePage() {
                 title="حالات الطلب"
                 subtitle="توزيع الطلبات حسب الحالة"
                 segments={orderStatusSegments}
+              />
+              <OrdersDonutCard
+                title="UTM Source"
+                subtitle="توزيع الطلبات حسب مصدر الإعلان"
+                segments={utmSourceSegments}
               />
               <OrdersDonutCard
                 title="حالات التوصيل"
