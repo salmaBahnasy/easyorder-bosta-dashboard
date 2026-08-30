@@ -39,7 +39,9 @@ import {
   orderDisplayId,
   orderPayment,
   orderPhone,
+  orderPlatform,
   orderSecondPhone,
+  orderTotalCost,
   formatOrderItemVariationProp,
 } from "../../utils/orderDisplay";
 import {
@@ -247,6 +249,7 @@ export default function OrderPayloadDetailsPage() {
     mobile2: "",
     type: "FORWARD",
     shipping_cost: "",
+    collection_amount: "",
     payment_method: "cod",
     order_type: "new",
     order_source: "store",
@@ -361,6 +364,12 @@ export default function OrderPayloadDetailsPage() {
           order.totals?.shippingCost ??
           "",
       ),
+      collection_amount: (() => {
+        const fromOrder = orderTotalCost(order);
+        if (fromOrder == null || fromOrder === "") return "";
+        const n = Number(fromOrder);
+        return Number.isFinite(n) ? String(n) : String(fromOrder);
+      })(),
       payment_method: normalizeEasyOrderPaymentMethod(
         order.payment_method ??
           order["Payment Method"] ??
@@ -394,9 +403,23 @@ export default function OrderPayloadDetailsPage() {
     [itemsSubtotal, shippingNum],
   );
 
+  const isShopifyOrder = orderPlatform(order) === "shopify";
+
+  const shopifyCollectionAmount = useMemo(() => {
+    const typed = String(form.collection_amount ?? "").trim();
+    if (typed !== "") return parseNonNegativeMoney(typed);
+    const fromOrder = orderTotalCost(order);
+    if (fromOrder != null && fromOrder !== "") {
+      const n = Number(fromOrder);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+    return grandTotalSuggested;
+  }, [form.collection_amount, order, grandTotalSuggested]);
+
   const collectionTotalDisplay = useMemo(
-    () => formatMoney(grandTotalSuggested),
-    [grandTotalSuggested],
+    () =>
+      formatMoney(isShopifyOrder ? shopifyCollectionAmount : grandTotalSuggested),
+    [isShopifyOrder, shopifyCollectionAmount, grandTotalSuggested],
   );
 
   function setField(name, value) {
@@ -833,7 +856,16 @@ export default function OrderPayloadDetailsPage() {
     });
     const shippingCost = parseNonNegativeMoney(form.shipping_cost);
     const cost = computeCartPayloadSubtotal(cartPayload);
-    const total_cost = cost + shippingCost;
+    const computedTotal = cost + shippingCost;
+    const shopifyCollection = String(form.collection_amount ?? "").trim();
+    const orderCollection = orderTotalCost(order);
+    const total_cost = isShopifyOrder
+      ? shopifyCollection !== ""
+        ? parseNonNegativeMoney(shopifyCollection)
+        : orderCollection != null && orderCollection !== ""
+          ? parseNonNegativeMoney(orderCollection)
+          : computedTotal
+      : computedTotal;
 
     const payload = {
       full_name: form.firstName,
@@ -1327,15 +1359,27 @@ export default function OrderPayloadDetailsPage() {
              </label>
              <label className="order-details-page__field">
                مبلغ التحصيل
-               <div
-                 className="order-details-page__input order-details-page__input--computed"
-                 role="status"
-                 aria-live="polite"
-                 aria-atomic="true"
-                 title="يُحسب تلقائياً من مجموع المنتجات وتكلفة الشحن"
-               >
-                 {collectionTotalDisplay}
-               </div>
+               {isShopifyOrder ? (
+                 <input
+                   className="order-details-page__input"
+                   type="number"
+                   min={0}
+                   step="0.01"
+                   value={form.collection_amount}
+                   onChange={(e) => setField("collection_amount", e.target.value)}
+                   title="افتراضي total_cost من الطلب، ويمكن تعديله قبل الإرسال لبوسطة"
+                 />
+               ) : (
+                 <div
+                   className="order-details-page__input order-details-page__input--computed"
+                   role="status"
+                   aria-live="polite"
+                   aria-atomic="true"
+                   title="يُحسب تلقائياً من مجموع المنتجات وتكلفة الشحن"
+                 >
+                   {collectionTotalDisplay}
+                 </div>
+               )}
              </label>
              <label className="order-details-page__field">
                طريقة الدفع 
